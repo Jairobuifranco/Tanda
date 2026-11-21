@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GYRO MAZE 300 - 300-Player Load & Stress Tester
+TEAMU Parcel Race - 300-Player Load & Stress Tester
 Simulates up to 300 concurrent real WebSocket connections sending tilt gyroscope vectors.
 """
 

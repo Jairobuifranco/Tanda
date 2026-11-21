@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GYRO MAZE 300 - Big Screen Arena</title>
+  <title>TEAMU: The Great Parcel Race</title>
   <link rel="stylesheet" href="/host.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,16 +15,16 @@
   <!-- Top HUD -->
   <header class="top-hud">
     <div class="brand">
-      <div class="logo-icon">🌀</div>
+      <div class="logo-icon">🛍️</div>
       <div class="brand-text">
-        <span class="game-title">GYRO MAZE 300</span>
-        <span class="game-sub">300-PLAYER REALTIME GYROSCOPE MARBLE BATTLE</span>
+        <span class="game-title">TEAMU</span>
+        <span class="game-sub">THE GREAT PARCEL RACE • TILT TO DELIVER</span>
       </div>
     </div>
 
     <!-- Center Mega Timer -->
     <div class="timer-container">
-      <div id="phase-badge" class="phase-badge phase-lobby">LOBBY STAGING</div>
+      <div id="phase-badge" class="phase-badge phase-lobby">SALE STARTS SOON</div>
       <div id="timer-display" class="timer-display">02:00</div>
     </div>
 
@@ -33,7 +33,7 @@
       <div class="player-counter">
         <span class="icon">👥</span>
         <span id="player-count">0</span>
-        <span class="counter-label" id="counter-sub">Racers</span>
+        <span class="counter-label" id="counter-sub">Shoppers</span>
       </div>
 
       <div class="button-group">
@@ -41,7 +41,7 @@
         <button id="btn-toggle-music" class="btn btn-icon" title="Toggle Soundtrack (M)">🎵</button>
         <button id="btn-toggle-announcer" class="btn btn-icon" title="Toggle AI Announcer (A)">🎙️</button>
         <button id="btn-bot-menu" class="btn btn-secondary">🤖 Bots <span id="bot-count-tag">(0)</span></button>
-        <button id="btn-start-match" class="btn btn-primary pulse-btn">START RACE (SPACE)</button>
+        <button id="btn-start-match" class="btn btn-primary pulse-btn">START SALE (SPACE)</button>
         <button id="btn-reset-match" class="btn btn-danger" style="display:none;">RESET</button>
       </div>
     </div>
@@ -58,8 +58,8 @@
 
       <!-- Bottom Broadcast Ticker -->
       <div class="ticker-box">
-        <span class="ticker-label">VORTEX RADAR:</span>
-        <span class="ticker-content" id="ticker-feed">Waiting for racers to calibrate phone gyroscopes...</span>
+        <span class="ticker-label">📢 DEAL ALERT</span>
+        <span class="ticker-content" id="ticker-feed">Shoppers are spinning the wheel for their perks...</span>
       </div>
     </section>
 
@@ -68,25 +68,31 @@
       <!-- Live Leaderboard Card -->
       <div class="card leaderboard-card">
         <div class="card-header">
-          <span class="c-title">🏆 LIVE STANDINGS</span>
-          <span class="c-badge" id="finished-count-tag">0 Finished</span>
+          <span class="c-title">🏆 TOP SHOPPERS</span>
+          <span class="c-badge" id="finished-count-tag">0 Delivered</span>
         </div>
         <div class="leaderboard-list" id="leaderboard-list">
-          <div class="empty-msg">Racers on the starting grid...</div>
+          <div class="empty-msg">Parcels waiting in the warehouse...</div>
         </div>
       </div>
 
       <!-- Red Hole Legend -->
       <div class="card legend-card">
         <div class="card-header">
-          <span class="c-title">🌀 HAZARD INTEL</span>
+          <span class="c-title">📋 HOW IT WORKS</span>
         </div>
         <p class="legend-desc">
-          <span class="hazard-dot red-dot"></span> <strong>Red Holes (8 Total)</strong>: Any ball landing on a Red Hole is instantly sucked in and teleported to a random distant vortex!
+          <span class="hazard-dot red-dot"></span> <strong>Customs Holds (12)</strong> pulse open and shut. Open ones pull parcels in and reroute them to a depot further from the door. Cross while they're closed!
+        </p>
+        <p class="legend-desc">
+          <span class="hazard-dot gold-dot"></span> <strong>Coupons</strong> are scattered in the aisles. Grab them to rack up savings for the Bargain Hunter award.
+        </p>
+        <p class="legend-desc">
+          🎡 Every shopper spins for a perk: 🚚 Express Shipping, 🛡️ Insured Parcel or 🧲 Coupon Magnet.
         </p>
         <div class="legend-row">
-          <span class="leg-item"><span class="hazard-dot green-dot"></span> Start Pad (Launch)</span>
-          <span class="leg-item"><span class="hazard-dot gold-dot"></span> Golden Finish Portal</span>
+          <span class="leg-item">📦 Warehouse (start)</span>
+          <span class="leg-item"><span class="hazard-dot green-dot"></span> 🏠 Delivered (finish)</span>
         </div>
       </div>
 
@@ -109,9 +115,10 @@
   <!-- LOBBY OVERLAY MODAL (Shows large QR code for joining) -->
   <div id="lobby-modal" class="modal-overlay">
     <div class="lobby-card">
-      <div class="lobby-badge">JOIN ON SAME WI-FI</div>
-      <h1 class="lobby-title">TILT YOUR PHONE TO STEER</h1>
-      <p class="lobby-subtitle">Up to 300 Players • Gyroscope Marble Race • 8 Red Hole Wormholes • 120 Seconds</p>
+      <div class="lobby-brand">TEAMU PRESENTS</div>
+      <h1 class="lobby-title">THE GREAT PARCEL RACE</h1>
+      <p class="lobby-subtitle">Spin for a perk • Tilt your phone to roll your parcel • Grab coupons • Dodge Customs Holds • 120 seconds</p>
+      <div class="lobby-badge">SCAN TO JOIN (SAME WI-FI)</div>
 
       <div class="lobby-body">
         <div class="lobby-qr-frame">
@@ -122,10 +129,10 @@
         <div class="lobby-status">
           <div class="lobby-count-circle">
             <span id="lobby-count-num">0</span>
-            <span class="sub">RACERS</span>
+            <span class="sub">SHOPPERS</span>
           </div>
           <p class="lobby-guide">
-            Open camera on your iPhone / Android to scan and calibrate your phone's tilt!
+            Scan with your phone camera, spin the wheel for your perk, then tilt to steer your parcel to the door!
           </p>
 
           <div class="quick-bot-controls">
@@ -136,7 +143,7 @@
             <button class="btn btn-sm btn-clear" onclick="clearBots()">Clear</button>
           </div>
 
-          <button id="btn-lobby-start" class="btn btn-huge pulse-btn">START 2-MINUTE RACE (SPACEBAR)</button>
+          <button id="btn-lobby-start" class="btn btn-huge pulse-btn">🔥 START THE 2-MINUTE SALE (SPACEBAR)</button>
         </div>
       </div>
     </div>
@@ -147,30 +154,36 @@
     <canvas id="confetti-canvas"></canvas>
     <div class="victory-card">
       <div class="victory-header">
-        <div class="trophy-icon">🏆</div>
-        <div class="champ-banner" id="champ-banner">RACER APEX WINS 1ST PLACE!</div>
-        <p class="champ-sub" id="champ-sub">Conquered the maze and escaped the Red Holes in 48.2s!</p>
+        <div class="trophy-icon">🏠📦</div>
+        <div class="champ-banner" id="champ-banner">DELIVERED FIRST!</div>
+        <p class="champ-sub" id="champ-sub">Nobody made it to the door before the sale ended!</p>
       </div>
 
       <!-- Podium Grid -->
       <div class="podium-grid" id="podium-cards"></div>
 
-      <!-- Void Traveler Award -->
-      <div class="special-award-box" id="award-box">
-        <span class="award-badge">🌀 VOID TRAVELER AWARD</span>
-        <span class="award-text" id="award-text">Racer-Nova warped through 7 Red Holes!</span>
+      <!-- Special Awards -->
+      <div class="awards-row">
+        <div class="special-award-box bargain">
+          <span class="award-badge">💸 BARGAIN HUNTER</span>
+          <span class="award-text" id="bargain-text">No coupons claimed this time!</span>
+        </div>
+        <div class="special-award-box" id="award-box">
+          <span class="award-badge">📦 LOST PARCEL AWARD</span>
+          <span class="award-text" id="award-text">Every parcel cleared customs!</span>
+        </div>
       </div>
 
       <div class="victory-actions">
-        <button id="btn-play-again" class="btn btn-huge pulse-btn">PLAY AGAIN (SPACEBAR)</button>
+        <button id="btn-play-again" class="btn btn-huge pulse-btn">🔁 NEW SALE (SPACEBAR)</button>
       </div>
     </div>
   </div>
 
   <!-- Bot Dialog -->
   <div id="bot-dialog" class="mini-dialog" style="display:none;">
-    <h4>Simulate Racers</h4>
-    <p>Populate the maze with autonomous gyro marble bots to test load.</p>
+    <h4>Simulate Shoppers</h4>
+    <p>Fill the warehouse with bot parcels for a demo or load test.</p>
     <div class="dialog-btns">
       <button class="btn btn-sm" onclick="setBotCount(50)">50 Bots</button>
       <button class="btn btn-sm" onclick="setBotCount(150)">150 Bots</button>

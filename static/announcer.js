@@ -1,5 +1,5 @@
 /**
- * GYRO MAZE 300 - Autonomous AI Esports Live Announcer
+ * TEAMU: THE GREAT PARCEL RACE - Shopping-Channel Live Announcer
  * Procedural commentary powered by SpeechSynthesis API with zero assets.
  */
 
@@ -103,9 +103,9 @@ class EsportsAnnouncer {
   // --------------------------------------------------------------------------
   onRaceStart() {
     const lines = [
-      "Racers on the grid... Three, two, one... GO GO GO!",
-      "Green lights are on! The maze race is officially underway!",
-      "And they're off! Three hundred marbles flood into the maze!"
+      "The sale is LIVE! Three, two, one... start shopping!",
+      "Doors are open! Parcels are rolling out of the warehouse!",
+      "Prices are dropping and the parcels are off! Two minutes to get delivered!"
     ];
     this.speak(lines[Math.floor(Math.random() * lines.length)], true);
   }
@@ -116,8 +116,8 @@ class EsportsAnnouncer {
 
     const lines = [
       `${leaderName} takes the lead!`,
-      `New race leader! ${leaderName} is surging ahead!`,
-      `${leaderName} pulls out in front!`
+      `${leaderName} is out for delivery and leading the pack!`,
+      `Hot deal! ${leaderName} pulls out in front!`
     ];
     this.speak(lines[Math.floor(Math.random() * lines.length)]);
   }
@@ -125,59 +125,67 @@ class EsportsAnnouncer {
   onWarp(racerName, holeName, isTopRacer = false) {
     if (isTopRacer) {
       const topLines = [
-        `Huge upset! Race leader ${racerName} just fell into a Red Hole!`,
-        `Disaster for the frontrunner! ${racerName} was swallowed by ${holeName}!`
+        `Oh no! The leader, ${racerName}, is stuck at ${holeName}!`,
+        `Delivery delayed! ${racerName} just got rerouted by ${holeName}!`
       ];
       this.speak(topLines[Math.floor(Math.random() * topLines.length)], true);
       return;
     }
 
     const lines = [
-      `Down the vortex! ${racerName} got sucked into ${holeName}!`,
-      `Red Hole strike! ${racerName} warped across the map!`,
-      `${racerName} took a trip through ${holeName}!`
+      `${racerName} got held at ${holeName}!`,
+      `Package rerouted! ${racerName} is going the long way round!`,
+      `${racerName} just found out about ${holeName}!`
     ];
     this.speak(lines[Math.floor(Math.random() * lines.length)]);
   }
 
   onCloseToGoal(racerName) {
     const lines = [
-      `${racerName} is within striking distance of the finish portal!`,
-      `${racerName} can see the checkered flag! Just a few corridors left!`
+      `${racerName} is out for delivery, just a few aisles away!`,
+      `${racerName} can almost ring the doorbell!`
+    ];
+    this.speak(lines[Math.floor(Math.random() * lines.length)]);
+  }
+
+  onMegaCoupon(racerName) {
+    const lines = [
+      `Cha-ching! ${racerName} grabbed a ten dollar mega coupon!`,
+      `What a bargain! ${racerName} scores the mega coupon!`
     ];
     this.speak(lines[Math.floor(Math.random() * lines.length)]);
   }
 
   onFirstPlaceFinish(racerName, timeStr) {
     const lines = [
-      `WE HAVE A WINNER! ${racerName} takes First Place in ${timeStr} seconds!`,
-      `Checkered flag! ${racerName} conquers the maze for the championship win!`
+      `DELIVERED! ${racerName} reaches the door first in ${timeStr} seconds!`,
+      `Ding dong! ${racerName}'s parcel has arrived! First place!`
     ];
     this.speak(lines[Math.floor(Math.random() * lines.length)], true);
   }
 
   onSecondPlaceFinish(racerName) {
-    this.speak(`Second place locked in by ${racerName}!`);
+    this.speak(`Second delivery of the day goes to ${racerName}!`);
   }
 
   onThirdPlaceFinish(racerName) {
-    this.speak(`Third place claimed by ${racerName}! The podium is set!`);
+    this.speak(`${racerName} is delivered in third! The podium is set!`);
   }
 
   onFinalCountdown(seconds) {
     if (seconds === 30) {
-      this.speak("Thirty seconds remaining on the clock! Final scramble for the podium!", true);
+      this.speak("Hurry! Only thirty seconds left on this deal!", true);
     } else if (seconds === 10) {
-      this.speak("Ten seconds left! Push for the line!", true);
+      this.speak("Ten seconds! The sale is almost over!", true);
     }
   }
 
   onRaceOver(podium) {
     if (podium && podium.length > 0) {
       const champ = podium[0].name;
-      this.speak(`Time is up! Race concluded! Congratulations to our champion, ${champ}!`, true);
+      this.speak(`The sale is over! Congratulations to our top shopper, ${champ}!`, true);
     } else {
-      this.speak("Time is up! The checkered flag has dropped!", true);
+      this.speak("The sale is over! Not a single parcel made it to the door!", true);
     }
   }
 }

@@ -1,38 +1,39 @@
-# 🌀 GYRO MAZE 300
+# 🛍️ TEAMU: The Great Parcel Race
 
-> **A 2-minute, 300-player simultaneous marble race where players tilt their phones' gyroscopes to steer through a giant maze with chaotic Red Hole teleporters.**
+> **A 2-minute, 300-player race where every player is a parcel. Tilt your phone to roll through a warehouse maze, spin for a perk, grab coupons, dodge Customs Holds and get Delivered first.**
 
-Designed for large events, conferences, parties, all-hands meetings, and live streams. One central big screen displays the entire maze and all 300 balls in real time, while every player uses their phone as a physical gyroscope controller over Wi-Fi.
-
----
-
-## 🎮 The 2-Minute Game Arc
-
-Every race lasts exactly **120 seconds**:
-
-1. **The Starting Grid**: All 300 balls spawn in the bottom-left launchpad (`LAUNCH`).
-2. **The Race (0:00 – 2:00)**:
-   - Players tilt their phones in their hands to steer their marble through branching neon corridors.
-   - A live 0–100% progress indicator on the phone shows real-time distance to the finish line.
-3. **The 8 Red Holes (Vortex Hazards)**:
-   - Scattered throughout the maze are 8 swirling crimson teleporters.
-   - If a ball rolls onto a Red Hole, it is instantly sucked in and **teleported to a random different Red Hole** across the map!
-   - The player's phone vibrates with haptic feedback and plays a cosmic warp sound.
-4. **The Golden Finish Portal**:
-   - The first player to navigate the maze and cross the golden portal in the top-right wins **1st Place**!
-   - 2nd, 3rd, 4th, etc., continue crossing the line until the 2-minute buzzer sounds.
-5. **The Podium**: Confetti explosions, podium rankings (1st, 2nd, 3rd), and the **"Void Traveler Award"** for whoever fell into the most Red Holes!
+Built by team **Teamu** for a hackathon. It's a shopping-app parody in a bright orange theme. One big screen shows the whole warehouse and every parcel in real time, and each player's phone is a tilt controller over Wi-Fi.
 
 ---
 
-## 📱 Mobile Gyroscope Controller (`/play`)
+## 🎮 The 2-Minute Sale
 
-- **Instant Join**: Pick a callsign and ball color.
-- **Physical Gyro Steering**: Tilting your phone left/right/forward/backward physically accelerates your ball in the maze.
-- **Level Compass & Bubble**: Live visual bubble level that mirrors your phone's tilt angle.
-- **One-Tap Re-Calibration**: Tap `RE-CALIBRATE` at any time to set your current phone position as flat/neutral.
-- **Touchpad Fallback**: A toggle button allows players without gyroscope sensors (or on laptops) to steer using a smooth touch dragpad.
-- **Haptic Alerts**: Vibrates when sucked into a Red Hole or crossing the finish line.
+Every sale lasts exactly **120 seconds**:
+
+1. **Join & Spin**: Scan the QR code, pick a name and parcel colour, then spin the **Lucky Wheel** for a perk:
+   - 🚚 **Express Shipping**: +20% speed all race
+   - 🛡️ **Insured Parcel**: bounce out of one Customs Hold per race
+   - 🧲 **Coupon Magnet**: grab coupons from further away
+   - 😅 **Better Luck Next Time**: no perk, pure skill
+2. **The Warehouse (start)**: All parcels spawn in the top-left `WAREHOUSE`.
+3. **The Aisles**: Narrow, single-lane corridors full of dead ends (generated from `MAZE_SEED`). The phone shows "Out for delivery" progress.
+4. **🏷️ Coupons**: 30 price tags ($1–$10) are scattered through the aisles and restock elsewhere when grabbed. Each one adds to your **savings**, shown on your phone and the leaderboard.
+5. **🚫 12 Customs Holds**: Pulsing red traps, several right on the fastest route. While open they pull nearby parcels in, and touching one **reroutes** you to a hold no closer to the door. While closed (dashed ring) they're safe to cross.
+6. **🏠 Delivered (finish)**: Reach the customer's door in the bottom-right. First in wins!
+7. **The Podium**: Top 3 deliveries plus two awards:
+   - 💸 **Bargain Hunter**: most coupon savings
+   - 📦 **Lost Parcel Award**: most reroutes
+
+---
+
+## 📱 Phone Controller (`/play`)
+
+- **Instant Join**: Pick a shopper name and parcel colour.
+- **Lucky Wheel**: One spin per shopper. The server rolls the perk and the wheel animates to it.
+- **Tilt Steering**: Tilt left/right/forward/back to roll your parcel.
+- **Wallet & Perk Chips**: Live coupon savings and your active perk.
+- **One-Tap Re-Calibration** and a **Touchpad Fallback** for phones without gyro access.
+- **Alerts**: Coupon "cha-ching" toasts, a "Package rerouted!" banner, an insurance-claimed banner and Delivered haptics.
 
 ---
 
@@ -62,18 +63,18 @@ This immediately terminates the Python server and the Cloudflare tunnel, leaving
 3. A large QR code and URL (e.g. `http://192.168.201.26:8000/play`) will appear on screen.
 4. Open the camera app on your phone and tap the banner to join immediately!
 
-> **Note on iOS Gyroscope Permission**: When joining on iPhone/iPad Safari, tap the big **"ENABLE GYRO & JOIN"** button and select **"Allow"** when prompted to enable tilt motion sensors. If denied, the on-screen touch controller automatically activates.
+> **Note on iOS Gyroscope Permission**: When joining on iPhone/iPad Safari, tap the big **"ENABLE TILT & JOIN"** button and select **"Allow"** when prompted to enable tilt motion sensors. If denied, the on-screen touch controller automatically activates.
 
 ---
 
 ## 🤖 Simulating 300 Racers (Solo & Demo Mode)
 
-You can demo and stress-test the full 300-player marble race without needing 300 phones:
+You can demo and stress-test the full 300-parcel sale without needing 300 phones:
 
 1. **From the Host Screen**:
    - In the lobby or race view, click **`🤖 Bots`** (or press `B`).
    - Select **`+50 Bots`**, **`+150 Bots`**, or **`+300 Full Swarm`**.
-   - Press **`SPACEBAR`** to watch 300 marbles race, bounce, and warp through the maze!
+   - Press **`SPACEBAR`** to watch 300 bot parcels hunt coupons, wait out Customs Holds and race for the door!
 
 2. **From the Terminal (CLI Stress Test)**:
    ```bash

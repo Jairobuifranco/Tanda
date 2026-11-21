@@ -1,10 +1,10 @@
 /**
- * GYRO MAZE 300 - Host Display Controller & 60 FPS Canvas Renderer
+ * TEAMU: THE GREAT PARCEL RACE - Host Display Controller & 60 FPS Canvas Renderer
  */
 
 const BALL_COLORS = [
-  "#00e5ff", "#ff2a5f", "#00ff88", "#ffbe0b",
-  "#b026ff", "#ff6600", "#ffffff", "#ff0077"
+  "#1E88E5", "#E91E63", "#00A86B", "#FFB300",
+  "#8E24AA", "#8D6E63", "#263238", "#00ACC1"
 ];
 
 class HostController {
@@ -21,6 +21,10 @@ class HostController {
     this.gridW = 27;
     this.gridH = 27;
     this.redHoles = [];
+    this.holeRadii = [];
+    this.coupons = [];         // [x, y, value]
+    this.locators = new Map(); // player id -> {start, until, from:[x,y]|null, name}
+    this.lastChaChing = 0;
     this.startPos = [2.5, 2.5];
     this.goalPos = [24.5, 24.5];
 
@@ -191,6 +195,16 @@ class HostController {
       this.phase = msg.phase;
       this.timer = msg.timer;
       this.balls = msg.balls || [];
+      if (msg.hole_radii) this.holeRadii = msg.hole_radii;
+      if (msg.coupons) this.coupons = msg.coupons;
+      if (msg.coupon_pickups && msg.coupon_pickups.length) {
+        msg.coupon_pickups.forEach(([x, y, v]) => this.spawnCouponBurst(x, y, v));
+        const nowMs = performance.now();
+        if (nowMs - this.lastChaChing > 350) {   // throttle: 300 bots grabbing coupons
+          this.lastChaChing = nowMs;
+          if (window.sfx.playChaChing) window.sfx.playChaChing();
+        }
+      }
 
       // Match Start Cue
       if (prevPhase === 'LOBBY' && this.phase === 'PLAYING') {
@@ -227,14 +241,21 @@ class HostController {
           if (evt.id && this.processedEvents.has(evt.id)) return;
           if (evt.id) this.processedEvents.add(evt.id);
 
-          if (evt.type === 'warp' && evt.coords) {
+          if (evt.type === 'locate' && evt.player_id) {
+            this.addLocator(evt.player_id, evt.player_name, null);
+          } else if (evt.type === 'warp' && evt.coords) {
             window.sfx.playWarp();
             this.spawnWarpSparks(evt.coords[0], evt.coords[1]);
+            if (evt.human && evt.player_id) {
+              this.addLocator(evt.player_id, evt.player_name, evt.from_coords || null);
+            }
             if (window.announcer) {
               const isTop = msg.leaderboard && msg.leaderboard[0] && 
                             (msg.leaderboard[0].name === evt.player_name || msg.leaderboard[0].id === evt.player_id);
-              window.announcer.onWarp(evt.player_name || 'A racer', evt.hole_name || 'a Red Hole', isTop);
+              window.announcer.onWarp(evt.player_name || 'A shopper', evt.hole_name || 'Customs', isTop);
             }
+          } else if (evt.type === 'coupon' && window.announcer) {
+            window.announcer.onMegaCoupon(evt.text.replace(/^💸 /, '').split(' grabbed')[0]);
           } else if (evt.type === 'goal' && evt.coords) {
             window.sfx.playGoalFanfare();
             this.spawnGoalFireworks(evt.coords[0], evt.coords[1]);
@@ -306,31 +327,33 @@ class HostController {
     // Phase Badge
     this.phaseBadge.className = 'phase-badge';
     if (this.phase === 'LOBBY') {
-      this.phaseBadge.textContent = 'LOBBY STAGING';
+      this.phaseBadge.textContent = 'SALE STARTS SOON';
       this.phaseBadge.classList.add('phase-lobby');
     } else if (this.phase === 'PLAYING') {
-      this.phaseBadge.textContent = 'RACE IN PROGRESS';
+      this.phaseBadge.textContent = '🔥 SALE ENDS IN';
       this.phaseBadge.classList.add('phase-racing');
     } else if (this.phase === 'OVER') {
-      this.phaseBadge.textContent = 'RACE FINISHED';
+      this.phaseBadge.textContent = 'SALE ENDED';
       this.phaseBadge.classList.add('phase-over');
     }
 
     // Players count
     this.playerCountEl.textContent = msg.total_players || 0;
     this.lobbyCountNum.textContent = msg.total_players || 0;
-    this.finishedTag.textContent = `${msg.finished_count || 0} Finished`;
+    this.finishedTag.textContent = `${msg.finished_count || 0} Delivered`;
 
     // Leaderboard
     if (msg.leaderboard && msg.leaderboard.length > 0) {
       this.leaderboardList.innerHTML = msg.leaderboard.map((p, idx) => `
         <div class="lb-row" style="border-left-color: ${p.color};">
           <span class="lb-rank">#${idx + 1}</span>
-          <span class="lb-name" style="color: ${p.color};">${p.name}</span>
-          ${p.finished 
-            ? `<span class="lb-progress lb-finished">FINISHED 🏁</span>` 
+          <span class="lb-dot" style="background: ${p.color};"></span>
+          <span class="lb-name" title="${PERK_LABELS[p.perk] || ''}">${escapeHtml(p.name)} ${PERK_EMOJI[p.perk] || ''}</span>
+          ${p.finished
+            ? `<span class="lb-progress lb-finished">🏠 DELIVERED</span>`
             : `<span class="lb-progress">${p.progress}%</span>`}
-          <span class="lb-warps" title="Red Hole Teleports">🌀${p.warps}</span>
+          <span class="lb-savings" title="Coupon savings">$${p.savings || 0}</span>
+          <span class="lb-warps" title="Times rerouted by Customs">📦${p.warps}</span>
         </div>
       `).join('');
     }
@@ -344,28 +367,35 @@ class HostController {
 
     // Victory Podium populate
     if (this.phase === 'OVER' && msg.podium) {
-      if (msg.podium.length > 0) {
+      if (msg.podium.length === 0) {
+        document.getElementById('champ-banner').textContent = 'SALE OVER: NO DELIVERIES!';
+        document.getElementById('champ-sub').textContent = 'Every parcel is still stuck in the aisles. Try again!';
+        document.getElementById('podium-cards').innerHTML = '';
+      } else {
         const champ = msg.podium[0];
-        document.getElementById('champ-banner').textContent = `${champ.name.toUpperCase()} WINS 1ST PLACE!`;
-        document.getElementById('champ-sub').textContent = `Conquered the maze and escaped the Red Holes in ${champ.time}s!`;
+        document.getElementById('champ-banner').textContent = `${champ.name.toUpperCase()} DELIVERED FIRST!`;
+        document.getElementById('champ-sub').textContent = `Dodged customs and reached the door in ${champ.time}s with $${champ.savings || 0} in coupons!`;
 
         const podiumHtml = msg.podium.slice(0, 3).map((p, idx) => `
           <div class="podium-box">
             <div class="podium-rank rank-${idx + 1}">#${idx + 1}</div>
-            <div class="podium-name" style="color: ${p.color};">${p.name}</div>
+            <div class="podium-name"><span class="lb-dot" style="display:inline-block;background:${p.color};"></span> ${escapeHtml(p.name)}</div>
             <div class="podium-time">${p.time}s</div>
-            <div style="font-size: 0.75rem; color: #888;">Warps: ${p.warps}</div>
+            <div class="podium-meta">💸 $${p.savings || 0} saved • 📦 ${p.warps} reroutes</div>
           </div>
         `).join('');
         document.getElementById('podium-cards').innerHTML = podiumHtml;
       }
 
-      // Void Traveler Award (most warps)
+      // Lost Parcel Award (most reroutes) & Bargain Hunter (most savings)
       if (this.balls && this.balls.length > 0) {
-        const sortedByWarps = [...this.balls].sort((a, b) => b[5] - a[5]);
-        const mostWarped = sortedByWarps[0];
+        const mostWarped = [...this.balls].sort((a, b) => b[5] - a[5])[0];
         if (mostWarped && mostWarped[5] > 0) {
-          document.getElementById('award-text').textContent = `${mostWarped[6]} was sucked into ${mostWarped[5]} Red Holes!`;
+          document.getElementById('award-text').textContent = `${mostWarped[6]} got rerouted ${mostWarped[5]} times!`;
+        }
+        const bargain = [...this.balls].sort((a, b) => (b[7] || 0) - (a[7] || 0))[0];
+        if (bargain && bargain[7] > 0) {
+          document.getElementById('bargain-text').textContent = `${bargain[6]} saved $${bargain[7]} in coupons!`;
         }
       }
     }
@@ -423,7 +453,7 @@ class HostController {
         vx: Math.cos(angle) * spd,
         vy: Math.sin(angle) * spd,
         size: Math.random() * 3 + 1.5,
-        color: '#ff0044',
+        color: '#E02020',
         alpha: 1.0,
         decay: 0.06, // Quick snappy fade
       });
@@ -443,7 +473,110 @@ class HostController {
         vx: Math.cos(angle) * spd,
         vy: Math.sin(angle) * spd,
         size: Math.random() * 3.5 + 2,
-        color: '#ffd700',
+        color: i % 2 ? '#12A150' : '#FB7701',
+        alpha: 1.0,
+        decay: 0.05,
+      });
+    }
+  }
+
+  addLocator(id, name, from) {
+    const now = performance.now();
+    this.locators.set(id, { start: now, until: now + 3200, from, name });
+  }
+
+  // Highlights real players after a reroute (or when they tap FIND ME):
+  // a dashed trail from the hold they fell into, plus a pulsing ring + name pill
+  renderLocators(ctx, scale, nowMs) {
+    if (this.locators.size === 0) return;
+    const byId = new Map();
+    for (const b of this.balls) byId.set(b[0], b);
+
+    for (const [id, loc] of this.locators) {
+      const b = byId.get(id);
+      if (!b || nowMs > loc.until) { this.locators.delete(id); continue; }
+      const t = (nowMs - loc.start) / (loc.until - loc.start);   // 0..1
+      const fade = t > 0.75 ? (1 - t) / 0.25 : 1;
+      const color = BALL_COLORS[b[3]] || '#FB7701';
+      const bx = b[1] * scale;
+      const by = b[2] * scale;
+
+      ctx.save();
+      ctx.globalAlpha = fade;
+
+      // Dim the rest of the board briefly so the eye jumps to the parcel
+      if (t < 0.35) {
+        ctx.fillStyle = `rgba(31, 26, 23, ${0.18 * (1 - t / 0.35)})`;
+        ctx.fillRect(0, 0, this.canvasSize, this.canvasSize);
+      }
+
+      // Trail from the hold they fell into
+      if (loc.from) {
+        const fx = loc.from[0] * scale;
+        const fy = loc.from[1] * scale;
+        const mx = (fx + bx) / 2;
+        const my = (fy + by) / 2 - Math.hypot(bx - fx, by - fy) * 0.25;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 6]);
+        ctx.lineDashOffset = -nowMs * 0.05;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.quadraticCurveTo(mx, my, bx, by);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Shrinking "target" rings that converge on the parcel
+      for (let k = 0; k < 2; k++) {
+        const phase = ((nowMs / 700) + k * 0.5) % 1;
+        const r = scale * (2.6 - phase * 1.9);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.globalAlpha = fade * phase;
+        ctx.beginPath();
+        ctx.arc(bx, by, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = fade;
+      ctx.strokeStyle = '#1F1A17';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(bx, by, scale * 0.6, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Name pill with a pointer
+      const label = `📍 ${b[6]}`;
+      ctx.font = `900 ${Math.max(11, scale * 0.5)}px Outfit, sans-serif`;
+      const tw = ctx.measureText(label).width;
+      const ph = Math.max(18, scale * 0.8);
+      const px = Math.min(Math.max(bx, tw / 2 + 8), this.canvasSize - tw / 2 - 8);
+      const py = by - scale * 1.1 - ph < 4 ? by + scale * 1.1 : by - scale * 1.1 - ph;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(px - tw / 2 - 8, py, tw + 16, ph, ph / 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, px, py + ph / 2 + 1);
+      ctx.textBaseline = 'alphabetic';
+      ctx.restore();
+    }
+  }
+
+  spawnCouponBurst(x, y, value) {
+    const scale = this.canvasSize / this.gridW;
+    const n = value >= 10 ? 16 : 6;
+    for (let i = 0; i < n; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = Math.random() * 2 + 1;
+      this.particles.push({
+        x: x * scale, y: y * scale,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd - 1,
+        size: Math.random() * 2 + 1.5,
+        color: value >= 10 ? '#E02020' : '#12A150',
         alpha: 1.0,
         decay: 0.05,
       });
@@ -452,7 +585,7 @@ class HostController {
 
   triggerConfetti() {
     this.confetti = [];
-    const colors = ['#00e5ff', '#ff2a5f', '#00ff88', '#ffbe0b', '#b026ff', '#ffd700', '#ffffff'];
+    const colors = ['#FB7701', '#FF8F1F', '#E02020', '#12A150', '#FFB300', '#1E88E5', '#ffffff'];
     const w = window.innerWidth;
     for (let i = 0; i < 150; i++) {
       this.confetti.push({
@@ -488,155 +621,204 @@ class HostController {
 
     ctx.clearRect(0, 0, size, size);
 
-    // 1. Draw Maze Floor & Walls
+    // 1. Warehouse floor + orange shelving walls
+    ctx.fillStyle = '#FFF8F2';
+    ctx.fillRect(0, 0, size, size);
     for (let r = 0; r < this.gridH; r++) {
       for (let c = 0; c < this.gridW; c++) {
-        const isWall = this.maze[r][c] === 1;
         const x = c * scale;
         const y = r * scale;
-
-        if (isWall) {
-          ctx.fillStyle = '#101628';
-          ctx.fillRect(x, y, scale, scale);
-          ctx.strokeStyle = 'rgba(0, 229, 255, 0.2)';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x, y, scale, scale);
-        } else {
-          ctx.fillStyle = '#0a0d1a';
+        if (this.maze[r][c] === 1) {
+          ctx.fillStyle = '#FB7701';
+          ctx.fillRect(x, y, scale + 0.5, scale + 0.5);
+        } else if ((r + c) % 2 === 0) {
+          ctx.fillStyle = '#FFF1E5';
           ctx.fillRect(x, y, scale, scale);
         }
       }
     }
+    // Shelf edge shading where walls meet the floor (gives the aisles depth)
+    ctx.fillStyle = '#D95F00';
+    for (let r = 0; r < this.gridH - 1; r++) {
+      for (let c = 0; c < this.gridW; c++) {
+        if (this.maze[r][c] === 1 && this.maze[r + 1][c] === 0) {
+          ctx.fillRect(c * scale, (r + 1) * scale - scale * 0.18, scale + 0.5, scale * 0.18);
+        }
+      }
+    }
 
-    // 2. Draw Start Zone (Launchpad)
+    // 2. Warehouse (start room)
     const sx = (this.startPos[0] - 1.5) * scale;
     const sy = (this.startPos[1] - 1.5) * scale;
-    ctx.fillStyle = 'rgba(0, 255, 136, 0.12)';
+    ctx.fillStyle = 'rgba(38, 50, 56, 0.08)';
     ctx.fillRect(sx, sy, scale * 3, scale * 3);
-    ctx.strokeStyle = 'rgba(0, 255, 136, 0.6)';
+    ctx.strokeStyle = '#263238';
     ctx.lineWidth = 2;
-    ctx.strokeRect(sx, sy, scale * 3, scale * 3);
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(sx + 1, sy + 1, scale * 3 - 2, scale * 3 - 2);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#263238';
+    ctx.font = `900 ${Math.max(9, scale * 0.42)}px Outfit, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.fillText('📦 WAREHOUSE', sx + 4, sy + scale * 0.6);
 
-    ctx.fillStyle = '#00ff88';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText('LAUNCH', sx + 10, sy + 18);
-
-    // 3. Draw Finish Zone (Golden Portal)
+    // 3. Customer's door (finish)
     const gx = this.goalPos[0] * scale;
     const gy = this.goalPos[1] * scale;
-    const pulse = 0.5 + 0.5 * Math.sin(nowSec * 5);
-
-    ctx.save();
-    ctx.translate(gx, gy);
-    ctx.rotate(nowSec * 1.5);
-
-    // Outer golden ring
-    ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + pulse * 0.4})`;
-    ctx.lineWidth = 3;
+    const pulse = 0.5 + 0.5 * Math.sin(nowSec * 4);
+    ctx.fillStyle = `rgba(18, 161, 80, ${0.12 + pulse * 0.1})`;
     ctx.beginPath();
-    ctx.arc(0, 0, 1.2 * scale, 0, Math.PI * 2);
+    ctx.arc(gx, gy, 1.25 * scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#12A150';
+    ctx.lineWidth = 3;
     ctx.stroke();
+    ctx.font = `${scale * 1.2}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🏠', gx, gy);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#12A150';
+    ctx.font = `900 ${Math.max(9, scale * 0.42)}px Outfit, sans-serif`;
+    ctx.fillText('DELIVERED', gx, gy - 1.35 * scale);
 
-    // Rotating star spokes
-    ctx.strokeStyle = 'rgba(255, 215, 0, 0.35)';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 4; i++) {
+    // 4. Coupons (bobbing price tags)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < this.coupons.length; i++) {
+      const [cx0, cy0, val] = this.coupons[i];
+      const cx = cx0 * scale;
+      const cy = cy0 * scale + Math.sin(nowSec * 3 + i) * scale * 0.06;
+      const w = scale * (val >= 10 ? 0.8 : 0.66);
+      const h = scale * 0.42;
+      ctx.fillStyle = val >= 10 ? '#E02020' : '#12A150';
       ctx.beginPath();
-      ctx.moveTo(-1.2 * scale, 0);
-      ctx.lineTo(1.2 * scale, 0);
-      ctx.stroke();
-      ctx.rotate(Math.PI / 4);
+      ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h * 0.3);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = `900 ${h * 0.72}px Outfit, sans-serif`;
+      ctx.fillText(`$${val}`, cx, cy + 0.5);
     }
-    ctx.restore();
+    ctx.textBaseline = 'alphabetic';
 
-    ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText('FINISH', gx - 20, gy - 1.4 * scale);
-
-    // 4. Draw 8 Red Holes (Swirling Vortex Wormholes)
+    // 5. Customs Holds (pulsing gravity traps)
     this.redHoles.forEach((hole, idx) => {
       const hx = hole.x * scale;
       const hy = hole.y * scale;
-      const hRad = 0.65 * scale;
+      const liveRad = this.holeRadii[idx] ?? 0.75;
 
       ctx.save();
       ctx.translate(hx, hy);
 
-      // Deep void core
-      const radGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, hRad);
-      radGrad.addColorStop(0, '#000000');
-      radGrad.addColorStop(0.6, '#3a0010');
-      radGrad.addColorStop(1, '#ff0044');
+      // Closed: dashed outline so players can see where it will reopen
+      if (liveRad < 0.08) {
+        ctx.strokeStyle = 'rgba(224, 32, 32, 0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 0.42 * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
+      const hRad = liveRad * scale;
+      const openness = liveRad / 0.75;
 
-      ctx.fillStyle = radGrad;
+      // Gravity field
+      ctx.fillStyle = `rgba(224, 32, 32, ${0.06 + 0.1 * openness})`;
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.2 * scale, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Trap body
+      const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, hRad);
+      grad.addColorStop(0, '#5A0000');
+      grad.addColorStop(0.65, '#B00000');
+      grad.addColorStop(1, '#E02020');
+      ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(0, 0, hRad, 0, Math.PI * 2);
       ctx.fill();
 
-      // Swirling vortex spiral arms
+      // Spinning spiral
       ctx.rotate(-nowSec * 3 + idx);
-      ctx.strokeStyle = 'rgba(255, 0, 68, 0.8)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       for (let a = 0; a < Math.PI * 2; a += 0.2) {
-        const r = (a / (Math.PI * 2)) * hRad;
+        const r = (a / (Math.PI * 2)) * hRad * 0.9;
         const x = Math.cos(a) * r;
         const y = Math.sin(a) * r;
         if (a === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.stroke();
-
       ctx.restore();
+
+      // "HOLD" sticker when wide open
+      if (openness > 0.7) {
+        ctx.fillStyle = '#fff';
+        ctx.font = `900 ${Math.max(8, scale * 0.3)}px Outfit, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText('HOLD', hx, hy - hRad - 3);
+      }
     });
 
-    // 5. Draw All 300 Balls
-    // [id, x, y, color_idx, finished, warps, name]
-    const ballScreenRad = 0.32 * scale;
-
-    for (let i = 0; i < this.balls.length; i++) {
+    // 6. Parcels: [id, x, y, color_idx, finished, warps, name, savings]
+    const half = 0.3 * scale;
+    // Draw back-to-front: real players come first in the list, so they end up on top of bots
+    for (let i = this.balls.length - 1; i >= 0; i--) {
       const b = this.balls[i];
       const bx = b[1] * scale;
       const by = b[2] * scale;
-      const color = BALL_COLORS[b[3]] || '#00e5ff';
+      const color = BALL_COLORS[b[3]] || BALL_COLORS[0];
       const isFinished = b[4] === 1;
 
       ctx.save();
+      ctx.globalAlpha = isFinished ? 0.55 : 1;
+      // Box body with dark outline so every colour reads on the light floor
+      ctx.fillStyle = color;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(bx - half, by - half, half * 2, half * 2, half * 0.3);
+      ctx.fill();
+      ctx.stroke();
+      // Packing tape
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.fillRect(bx - half * 0.18, by - half, half * 0.36, half * 2);
 
       if (isFinished) {
-        // Golden celebration halo
-        ctx.strokeStyle = '#ffd700';
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#12A150';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(bx, by, ballScreenRad * 1.5, 0, Math.PI * 2);
+        ctx.arc(bx, by, half * 1.6, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      // Ball body
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.arc(bx, by, ballScreenRad, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Ball highlight
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowBlur = 0;
-      ctx.beginPath();
-      ctx.arc(bx - ballScreenRad * 0.3, by - ballScreenRad * 0.3, ballScreenRad * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Callsign above ball (shown for top runners or if few balls)
-      if (this.balls.length <= 40 || i < 8) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 9px monospace';
+      // Name tags: real players always get a pill; bots only when the warehouse is quiet
+      if (b[8] === 1 && !this.locators.has(b[0])) {
+        ctx.font = 'bold 10px Outfit, sans-serif';
+        const tw = ctx.measureText(b[6] || '').width;
+        ctx.fillStyle = 'rgba(31, 26, 23, 0.85)';
+        ctx.beginPath();
+        ctx.roundRect(bx - tw / 2 - 4, by - half - 15, tw + 8, 13, 6);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
         ctx.textAlign = 'center';
-        ctx.fillText(b[6] || '', bx, by - ballScreenRad - 3);
+        ctx.fillText(b[6] || '', bx, by - half - 5);
+      } else if (this.balls.length <= 40) {
+        ctx.fillStyle = '#1F1A17';
+        ctx.font = 'bold 9px Outfit, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(b[6] || '', bx, by - half - 3);
       }
-
       ctx.restore();
     }
+
+    // 7. Locator highlights for real players (after reroutes / FIND ME)
+    this.renderLocators(ctx, scale, time);
   }
 
   renderParticles() {
@@ -690,6 +872,13 @@ class HostController {
       ctx.restore();
     }
   }
+}
+
+const PERK_EMOJI = { express: '🚚', insured: '🛡️', magnet: '🧲', none: '' };
+const PERK_LABELS = { express: 'Express Shipping', insured: 'Insured Parcel', magnet: 'Coupon Magnet', none: '' };
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
 // Global Bot Helper Functions for Dialog

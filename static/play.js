@@ -1,10 +1,22 @@
 /**
- * GYRO MAZE 300 - Mobile Gyroscope Controller Logic
+ * TEAMU: THE GREAT PARCEL RACE - Mobile Gyroscope Controller Logic
  */
 
 const BALL_COLORS = [
-  "#00e5ff", "#ff2a5f", "#00ff88", "#ffbe0b",
-  "#b026ff", "#ff6600", "#ffffff", "#ff0077"
+  "#1E88E5", "#E91E63", "#00A86B", "#FFB300",
+  "#8E24AA", "#8D6E63", "#263238", "#00ACC1"
+];
+
+// Lucky wheel: 8 slices, two per perk (the server decides the result; we animate to it)
+const WHEEL_SLICES = [
+  { perk: 'express', emoji: '🚚', label: 'EXPRESS', color: '#FB7701', text: '#fff' },
+  { perk: 'none',    emoji: '😅', label: 'TRY AGAIN', color: '#FFFFFF', text: '#7A6A5E' },
+  { perk: 'magnet',  emoji: '🧲', label: 'MAGNET', color: '#E02020', text: '#fff' },
+  { perk: 'insured', emoji: '🛡️', label: 'INSURED', color: '#FFF1E5', text: '#D95F00' },
+  { perk: 'express', emoji: '🚚', label: 'EXPRESS', color: '#FB7701', text: '#fff' },
+  { perk: 'none',    emoji: '😅', label: 'TRY AGAIN', color: '#FFFFFF', text: '#7A6A5E' },
+  { perk: 'magnet',  emoji: '🧲', label: 'MAGNET', color: '#E02020', text: '#fff' },
+  { perk: 'insured', emoji: '🛡️', label: 'INSURED', color: '#FFF1E5', text: '#D95F00' },
 ];
 
 class PlayerController {
@@ -44,6 +56,28 @@ class PlayerController {
     this.finishedBanner = document.getElementById('finished-banner');
     this.hasTriggeredFinish = false;
 
+    this.spinScreen = document.getElementById('spin-screen');
+    this.wheelCanvas = document.getElementById('wheel-canvas');
+    this.wheelAngle = 0;
+    this.hasSpun = false;
+    this.lastPhase = 'LOBBY';
+    this.perk = 'none';
+    this.perkInfo = null;
+    this.lastSavings = 0;
+    this.couponTimer = null;
+
+    // Mini-map state
+    this.map = null;              // {maze, holes, start, goal}
+    this.mapCanvas = document.getElementById('minimap');
+    this.mapBase = null;          // pre-rendered maze (offscreen canvas)
+    this.holeRadii = [];
+    this.me = null;               // target position from server
+    this.meShown = null;          // interpolated position for drawing
+    this.warpTrail = null;        // {from:[x,y], to:[x,y], start}
+    window.addEventListener('resize', () => this.sizeMiniMap());
+    requestAnimationFrame((t) => this.renderMiniMap(t));
+
+    this.drawWheel(0);
     this.initColorSwatches();
     this.initTouchControls();
     this.loadSavedName();
@@ -153,7 +187,7 @@ class PlayerController {
     if (this.isGyroActive) {
       btn.textContent = '📱 GYROSCOPE';
       btn.classList.add('active');
-      this.hudStatus.textContent = 'GYRO ACTIVE (TILT PHONE)';
+      this.hudStatus.textContent = 'TILT PHONE TO ROLL';
     } else {
       btn.textContent = '🕹️ TOUCH PAD';
       btn.classList.remove('active');
@@ -227,7 +261,8 @@ class PlayerController {
   }
 
   updateMarbleUI(tx, ty) {
-    const maxOffset = 70; // pixels from center
+    // Keep the parcel inside the disc whatever size the disc is rendered at
+    const maxOffset = Math.max(20, this.disc.clientWidth / 2 - this.marble.clientWidth / 2 - 6);
     const mx = tx * maxOffset;
     const my = ty * maxOffset;
     this.marble.style.transform = `translate(calc(-50% + ${mx}px), calc(-50% + ${my}px))`;
@@ -282,13 +317,24 @@ class PlayerController {
       document.documentElement.style.setProperty('--player-color', color);
       document.getElementById('hud-player-name').textContent = this.player.name;
 
+      if (msg.map) {
+        this.map = msg.map;
+        this.mapBase = null;   // re-render maze base
+      }
+
+      this.perk = this.player.perk || 'none';
+      this.perkInfo = msg.perk_info || null;
+      this.lastPhase = msg.phase;
+      this.updatePerkChip();
+
       this.joinScreen.style.display = 'none';
-      if (msg.phase === 'OVER') {
-        this.gameOverScreen.style.display = 'flex';
+      if (!this.hasSpun) {
+        // First join: spin the lucky wheel before taking control
+        this.spinScreen.style.display = 'flex';
         this.gameScreen.style.display = 'none';
-      } else {
-        this.gameScreen.style.display = 'flex';
         this.gameOverScreen.style.display = 'none';
+      } else {
+        this.showPhaseScreen(msg.phase);
       }
     } else if (msg.type === 'player_tick') {
       this.updateState(msg);
@@ -296,6 +342,273 @@ class PlayerController {
       this.triggerWarpAlert(msg);
     } else if (msg.type === 'you_finished') {
       this.triggerFinishAlert(msg);
+    } else if (msg.type === 'you_coupon') {
+      this.triggerCouponToast(msg);
+    } else if (msg.type === 'you_insured') {
+      this.triggerInsuredAlert(msg);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Mini-map: your parcel on the maze, with live Customs Hold state
+  // --------------------------------------------------------------------------
+  sizeMiniMap() {
+    if (!this.map || this.gameScreen.style.display === 'none') return false;
+    const card = document.getElementById('map-card');
+    const legendH = 22;
+    const avail = Math.floor(Math.min(card.clientWidth - 16, card.clientHeight - 16 - legendH));
+    if (avail <= 40) return false;
+    const dpr = window.devicePixelRatio || 1;
+    if (this.mapCssSize !== avail) {
+      this.mapCssSize = avail;
+      this.mapCanvas.style.width = `${avail}px`;
+      this.mapCanvas.style.height = `${avail}px`;
+      this.mapCanvas.width = avail * dpr;
+      this.mapCanvas.height = avail * dpr;
+      this.mapBase = null;
+    }
+    return true;
+  }
+
+  buildMapBase() {
+    const { maze, start, goal } = this.map;
+    const n = maze.length;
+    const px = this.mapCanvas.width;
+    const cell = px / n;
+    const off = document.createElement('canvas');
+    off.width = px; off.height = px;
+    const ctx = off.getContext('2d');
+    ctx.fillStyle = '#FFF8F2';
+    ctx.fillRect(0, 0, px, px);
+    ctx.fillStyle = '#FB7701';
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (maze[r][c] === 1) ctx.fillRect(c * cell, r * cell, cell + 0.5, cell + 0.5);
+      }
+    }
+    // Warehouse + door markers
+    ctx.strokeStyle = '#263238';
+    ctx.lineWidth = Math.max(1, cell * 0.12);
+    ctx.setLineDash([cell * 0.4, cell * 0.25]);
+    ctx.strokeRect((start[0] - 1.5) * cell, (start[1] - 1.5) * cell, cell * 3, cell * 3);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(18, 161, 80, 0.25)';
+    ctx.beginPath();
+    ctx.arc(goal[0] * cell, goal[1] * cell, cell * 1.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = `${cell * 1.6}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🏠', goal[0] * cell, goal[1] * cell);
+    this.mapBase = off;
+  }
+
+  renderMiniMap(nowMs) {
+    requestAnimationFrame((t) => this.renderMiniMap(t));
+    if (!this.map || !this.sizeMiniMap()) return;
+    if (!this.mapBase) this.buildMapBase();
+
+    const ctx = this.mapCanvas.getContext('2d');
+    const px = this.mapCanvas.width;
+    const cell = px / this.map.maze.length;
+    ctx.drawImage(this.mapBase, 0, 0);
+
+    // Customs Holds: solid when open (dangerous), dashed ring when closed (safe)
+    this.map.holes.forEach(([hx, hy], i) => {
+      const rad = this.holeRadii[i] || 0;
+      ctx.beginPath();
+      if (rad >= 0.08) {
+        ctx.fillStyle = 'rgba(224, 32, 32, 0.15)';
+        ctx.arc(hx * cell, hy * cell, cell * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.fillStyle = '#E02020';
+        ctx.arc(hx * cell, hy * cell, Math.max(cell * 0.3, rad * cell), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = 'rgba(224, 32, 32, 0.6)';
+        ctx.lineWidth = Math.max(1, cell * 0.1);
+        ctx.setLineDash([cell * 0.2, cell * 0.2]);
+        ctx.arc(hx * cell, hy * cell, cell * 0.4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+
+    // Reroute trail: dashed arc from the hold you fell into to where you came out
+    if (this.warpTrail) {
+      const t = (nowMs - this.warpTrail.start) / 2500;
+      if (t >= 1) {
+        this.warpTrail = null;
+      } else {
+        const [fx, fy] = this.warpTrail.from.map(v => v * cell);
+        const [tx, ty] = this.warpTrail.to.map(v => v * cell);
+        const mx = (fx + tx) / 2;
+        const my = (fy + ty) / 2 - Math.hypot(tx - fx, ty - fy) * 0.25;
+        ctx.save();
+        ctx.globalAlpha = 1 - t;
+        ctx.strokeStyle = '#1F1A17';
+        ctx.lineWidth = Math.max(2, cell * 0.25);
+        ctx.setLineDash([cell * 0.6, cell * 0.4]);
+        ctx.lineDashOffset = -nowMs * 0.03;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.quadraticCurveTo(mx, my, tx, ty);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // You: smoothed toward the latest server position
+    if (this.me && this.meShown) {
+      this.meShown[0] += (this.me[0] - this.meShown[0]) * 0.3;
+      this.meShown[1] += (this.me[1] - this.meShown[1]) * 0.3;
+      const x = this.meShown[0] * cell;
+      const y = this.meShown[1] * cell;
+      const color = (this.player && this.player.color) || '#1E88E5';
+
+      // Pulsing locator ring (bigger + faster right after a reroute)
+      const boosted = this.warpTrail ? 1.8 : 1;
+      const phase = (nowMs / (boosted > 1 ? 450 : 900)) % 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, cell * 0.2);
+      ctx.globalAlpha = 1 - phase;
+      ctx.beginPath();
+      ctx.arc(x, y, cell * (0.7 + phase * 1.6 * boosted), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      const s = Math.max(5, cell * 0.85);
+      ctx.fillStyle = color;
+      ctx.strokeStyle = '#1F1A17';
+      ctx.lineWidth = Math.max(1.5, cell * 0.14);
+      ctx.beginPath();
+      ctx.roundRect(x - s / 2, y - s / 2, s, s, s * 0.25);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  findMe() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ type: 'locate_me' }));
+    if (navigator.vibrate) navigator.vibrate(20);
+    const btn = document.getElementById('btn-find-me');
+    btn.disabled = true;
+    btn.textContent = '👀 LOOK UP!';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '📍 FIND ME'; }, 2000);
+  }
+
+  showPhaseScreen(phase) {
+    this.spinScreen.style.display = 'none';
+    if (phase === 'OVER') {
+      this.gameOverScreen.style.display = 'flex';
+      this.gameScreen.style.display = 'none';
+    } else {
+      this.gameScreen.style.display = 'flex';
+      this.gameOverScreen.style.display = 'none';
+    }
+  }
+
+  updatePerkChip() {
+    const chip = document.getElementById('hud-perk');
+    const info = this.perkInfo;
+    if (!info || this.perk === 'none') {
+      chip.textContent = '😅 No perk';
+    } else {
+      chip.textContent = `${info.emoji} ${info.label}`;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Lucky wheel
+  // --------------------------------------------------------------------------
+  drawWheel(angle) {
+    const ctx = this.wheelCanvas.getContext('2d');
+    const size = this.wheelCanvas.width;
+    const r = size / 2;
+    const n = WHEEL_SLICES.length;
+    const slice = (Math.PI * 2) / n;
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(r, r);
+    ctx.rotate(angle);
+    WHEEL_SLICES.forEach((s, i) => {
+      // Slice i is centred on angle i*slice, measured from 12 o'clock
+      const a0 = -Math.PI / 2 + i * slice - slice / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r - 2, a0, a0 + slice);
+      ctx.closePath();
+      ctx.fillStyle = s.color;
+      ctx.fill();
+      ctx.strokeStyle = '#F2DFCF';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.rotate(i * slice);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = s.text;
+      ctx.font = `${size * 0.075}px sans-serif`;
+      ctx.fillText(s.emoji, 0, -r * 0.68);
+      ctx.font = `900 ${size * 0.036}px Outfit, sans-serif`;
+      ctx.fillText(s.label, 0, -r * 0.5);
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  spin() {
+    if (this.hasSpun || this.spinning) return;
+    this.spinning = true;
+    document.getElementById('btn-spin').disabled = true;
+    window.sfx.init();
+
+    // Pick a slice showing the perk the server rolled, then spin 5+ turns to land on it
+    const n = WHEEL_SLICES.length;
+    const sliceAngle = (Math.PI * 2) / n;
+    const matches = WHEEL_SLICES.map((s, i) => (s.perk === this.perk ? i : -1)).filter(i => i >= 0);
+    const target = matches[Math.floor(Math.random() * matches.length)];
+    const jitter = (Math.random() - 0.5) * sliceAngle * 0.6;
+    const finalAngle = Math.PI * 2 * 6 - target * sliceAngle + jitter;
+    const duration = 3800;
+    const start = performance.now();
+    let lastTickSlice = -1;
+
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 4);
+      this.wheelAngle = finalAngle * eased;
+      this.drawWheel(this.wheelAngle);
+
+      const sliceIdx = Math.floor((this.wheelAngle + sliceAngle / 2) / sliceAngle);
+      if (sliceIdx !== lastTickSlice) {
+        lastTickSlice = sliceIdx;
+        window.sfx.playRollTick();
+        if (navigator.vibrate) navigator.vibrate(5);
+      }
+
+      if (t < 1) {
+        requestAnimationFrame(step);
+      } else {
+        this.spinning = false;
+        this.hasSpun = true;
+        this.showPerkResult();
+      }
+    };
+    requestAnimationFrame(step);
+  }
+
+  showPerkResult() {
+    const info = this.perkInfo || { emoji: '😅', label: 'Better Luck Next Time', desc: 'No perk. Pure skill!' };
+    document.getElementById('perk-emoji').textContent = info.emoji;
+    document.getElementById('perk-name').textContent = info.label;
+    document.getElementById('perk-desc').textContent = info.desc;
+    document.getElementById('perk-result').style.display = 'block';
+    if (this.perk !== 'none') {
+      window.sfx.playChaChing();
+      if (navigator.vibrate) navigator.vibrate([40, 40, 80]);
     }
   }
 
@@ -308,6 +621,17 @@ class PlayerController {
     this.ctrlRank.textContent = `#${msg.rank}`;
     this.progFill.style.width = `${msg.progress}%`;
     this.progText.textContent = `${msg.progress}%`;
+    this.lastPhase = msg.phase;
+
+    if (typeof msg.x === 'number') {
+      this.me = [msg.x, msg.y];
+      if (!this.meShown) this.meShown = [msg.x, msg.y];
+    }
+    if (msg.holes) this.holeRadii = msg.holes;
+
+    const savings = msg.savings || 0;
+    document.getElementById('hud-savings').textContent = `$${savings}`;
+    if (savings < this.lastSavings) this.lastSavings = savings;  // new race reset
 
     // Screen transitions
     if (msg.phase === 'OVER') {
@@ -316,6 +640,7 @@ class PlayerController {
         this.gameOverScreen.style.display = 'flex';
         document.getElementById('final-rank').textContent = msg.finished ? `#${msg.finish_rank}` : `#${msg.rank}`;
         document.getElementById('final-warps').textContent = msg.warps;
+        document.getElementById('final-savings').textContent = `$${savings}`;
       }
     } else if (msg.phase === 'PLAYING' || msg.phase === 'LOBBY') {
       if (this.gameOverScreen.style.display !== 'none' && this.player) {
@@ -327,17 +652,57 @@ class PlayerController {
     }
   }
 
+  showBanner(icon, title, details, insured = false) {
+    document.getElementById('warp-icon').textContent = icon;
+    document.getElementById('warp-title').textContent = title;
+    document.getElementById('warp-details').textContent = details;
+    this.warpBanner.classList.toggle('insured', insured);
+    this.warpBanner.style.display = 'flex';
+    clearTimeout(this.bannerTimer);
+    this.bannerTimer = setTimeout(() => {
+      this.warpBanner.style.display = 'none';
+    }, 1400);
+  }
+
   triggerWarpAlert(msg) {
     window.sfx.playWarp();
     if (navigator.vibrate) navigator.vibrate([60, 80, 60]);
+    this.showBanner('📦', 'PACKAGE REROUTED!', `Stuck at ${msg.from} ➔ now at ${msg.to}. Check your map!`);
+    if (msg.from_xy && msg.to_xy) {
+      this.warpTrail = { from: msg.from_xy, to: msg.to_xy, start: performance.now() };
+      // Jump the marker straight to the exit hold instead of sliding across the map
+      this.me = msg.to_xy.slice();
+      this.meShown = msg.to_xy.slice();
+    }
+  }
 
-    const details = document.getElementById('warp-details');
-    details.textContent = `${msg.from} ➔ ${msg.to}`;
-    this.warpBanner.style.display = 'flex';
+  triggerInsuredAlert(msg) {
+    window.sfx.playChaChing();
+    if (navigator.vibrate) navigator.vibrate([30, 30, 30]);
+    this.showBanner('🛡️', 'INSURANCE CLAIMED!', `Your parcel bounced out of ${msg.hole}. That was your one free pass!`, true);
+    this.perk = 'none';
+    this.perkInfo = { emoji: '🛡️', label: 'Insurance used' };
+    document.getElementById('hud-perk').textContent = '🛡️ Insurance used';
+  }
 
-    setTimeout(() => {
-      this.warpBanner.style.display = 'none';
-    }, 1200);
+  triggerCouponToast(msg) {
+    window.sfx.playChaChing();
+    if (navigator.vibrate) navigator.vibrate(15);
+    const toast = document.getElementById('coupon-toast');
+    toast.textContent = msg.value >= 10 ? `🔥 +$${msg.value} MEGA COUPON!` : `+$${msg.value} COUPON! 💸`;
+    toast.classList.toggle('mega', msg.value >= 10);
+    // restart the CSS animation
+    toast.style.display = 'none';
+    void toast.offsetWidth;
+    toast.style.display = 'block';
+    clearTimeout(this.couponTimer);
+    this.couponTimer = setTimeout(() => { toast.style.display = 'none'; }, 900);
+
+    document.getElementById('hud-savings').textContent = `$${msg.savings}`;
+    const chip = document.querySelector('.savings-chip');
+    chip.classList.remove('bump');
+    void chip.offsetWidth;
+    chip.classList.add('bump');
   }
 
   triggerFinishAlert(msg) {
@@ -347,7 +712,7 @@ class PlayerController {
     window.sfx.playGoalFanfare();
     if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 150]);
 
-    document.getElementById('finish-rank-text').textContent = `Rank #${msg.rank} in ${msg.time}s!`;
+    document.getElementById('finish-rank-text').textContent = `Rank #${msg.rank} • arrived in ${msg.time}s`;
     this.finishedBanner.style.display = 'block';
 
     setTimeout(() => {
@@ -363,7 +728,7 @@ window.playerCtrl = new PlayerController();
 
 window.joinGame = async function() {
   const nameInput = document.getElementById('player-name-input');
-  const name = nameInput.value.trim() || `Racer-${Math.floor(Math.random() * 90 + 10)}`;
+  const name = nameInput.value.trim() || `Shopper-${Math.floor(Math.random() * 90 + 10)}`;
   window.sfx.init();
 
   // Request gyro permission on user interaction
@@ -372,7 +737,7 @@ window.joinGame = async function() {
 };
 
 window.quickRandomName = function() {
-  const prefixes = ['Vortex', 'Apex', 'Nova', 'Bolt', 'Titan', 'Raptor', 'Zenith', 'Flash', 'Onyx', 'Cosmo'];
+  const prefixes = ['Bargain', 'DealHunter', 'CartKing', 'Coupon', 'FlashSale', 'Unboxer', 'Haul', 'Promo', 'Freebie', 'Checkout'];
   const name = `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${Math.floor(Math.random() * 90 + 10)}`;
   document.getElementById('player-name-input').value = name;
 };
@@ -383,4 +748,16 @@ window.recalibrateGyro = function() {
 
 window.toggleControlMode = function() {
   window.playerCtrl.toggleMode();
+};
+
+window.spinWheel = function() {
+  window.playerCtrl.spin();
+};
+
+window.goToController = function() {
+  window.playerCtrl.showPhaseScreen(window.playerCtrl.lastPhase);
+};
+
+window.findMe = function() {
+  window.playerCtrl.findMe();
 };

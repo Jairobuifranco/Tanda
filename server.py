@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-GYRO MAZE 300 - Game Server
-A 2-Minute 300-Player Simultaneous Gyroscope Marble Race with Red Holes
+TEAMU: THE GREAT PARCEL RACE - Game Server
+A 2-minute, 300-player gyroscope parcel race through a warehouse maze:
+spin for a perk, grab coupons, dodge Customs Holds, get Delivered.
 Powered by pure Python 3 standard library (asyncio + RFC 6455). Zero dependencies.
 """
 
@@ -26,23 +27,39 @@ MATCH_DURATION = 120.0  # Exactly 2 minutes
 PHYSICS_FPS = 30
 PHYSICS_DT = 1.0 / PHYSICS_FPS
 BALL_RADIUS = 0.32
-HOLE_RADIUS = 0.65
+HOLE_RADIUS = 0.75  # max (fully open) Red Hole radius
 GOAL_RADIUS = 1.25
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
-# High-contrast neon ball color palette
+# Parcel colours: readable on the light warehouse floor, distinct from the orange shelving
 BALL_COLORS = [
-    "#00e5ff",  # Cyan
-    "#ff2a5f",  # Pink
-    "#00ff88",  # Neon Green
-    "#ffbe0b",  # Amber Gold
-    "#b026ff",  # Neon Purple
-    "#ff6600",  # Bright Orange
-    "#ffffff",  # White Pearl
-    "#ff0077",  # Hot Magenta
+    "#1E88E5",  # Blue
+    "#E91E63",  # Pink
+    "#00A86B",  # Green
+    "#FFB300",  # Amber
+    "#8E24AA",  # Purple
+    "#8D6E63",  # Cardboard
+    "#263238",  # Charcoal
+    "#00ACC1",  # Teal
 ]
+
+# Spin-the-wheel perks (rolled server-side on join; the phone animates the wheel to it)
+PERKS = {
+    "express": {"label": "Express Shipping", "emoji": "🚚", "desc": "+20% speed all race"},
+    "insured": {"label": "Insured Parcel", "emoji": "🛡️", "desc": "Escape 1 Customs Hold per race"},
+    "magnet":  {"label": "Coupon Magnet", "emoji": "🧲", "desc": "Grab coupons from further away"},
+    "none":    {"label": "Better Luck Next Time", "emoji": "😅", "desc": "No perk. Pure skill!"},
+}
+PERK_KEYS = list(PERKS.keys())
+EXPRESS_SPEED_MULT = 1.2
+
+# Coupons scattered through the aisles
+COUPON_COUNT = 30
+COUPON_RADIUS = 0.25
+MAGNET_REACH = 1.3
+COUPON_VALUES = [1, 1, 2, 2, 3, 3, 5, 5, 10]   # dollars, weighted toward small
 
 # -----------------------------------------------------------------------------
 # Detect Host LAN IP for Wi-Fi QR Code
@@ -140,37 +157,56 @@ class WSConnection:
 # -----------------------------------------------------------------------------
 # Maze Definition & BFS Distance Field
 # -----------------------------------------------------------------------------
-# 27x27 Wide-Path Grid
-# 1 = Wall, 0 = Open corridor
-MAZE_LAYOUT = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1,1,1,0,0,1,1,0,1],
-    [1,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1,1,1,0,0,1,1,0,1],
-    [1,1,1,0,0,1,1,1,1,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,0,0,1,1,1,1,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,0,0,0,1],
-    [1,0,0,1,1,1,0,0,1,1,1,1,0,0,1,1,0,0,0,0,0,0,1,0,0,1,1],
-    [1,0,0,1,1,1,0,0,1,1,1,1,0,0,1,1,0,0,0,0,0,0,1,0,0,1,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,1,1,1,0,0,0,1],
-    [1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,1,1,0,0,1,1,1,0,0,1],
-    [1,0,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,1,1,0,0,1,1,1,0,0,1],
-    [1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
-    [1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
-    [1,0,0,0,0,0,1,1,1,0,0,1,1,1,1,0,0,0,1,1,1,0,0,1,1,0,1],
-    [1,0,0,0,0,0,1,1,1,0,0,1,1,1,1,0,0,0,1,1,1,0,0,1,1,0,1],
-    [1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,0,0,1,1,1,0,0,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1],
-    [1,0,0,0,1,1,1,0,0,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1],
-    [1,0,0,0,0,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-]
+# 27x27 Narrow-Corridor Maze (1 = Wall, 0 = Open corridor)
+# Generated deterministically from MAZE_SEED: a recursive-backtracker "perfect"
+# maze (1-tile corridors, lots of dead ends), then lightly braided so a few
+# alternate routes exist. Change MAZE_SEED to get a different layout.
+MAZE_SIZE = 27
+MAZE_SEED = 251  # 115-tile shortest route, 47 turns
+BRAID_CHANCE = 0.18  # chance a dead end gets knocked through into a loop
+
+
+def generate_maze(size: int, seed: int) -> List[List[int]]:
+    rng = random.Random(seed)
+    grid = [[1] * size for _ in range(size)]
+    cells = range(1, size - 1, 2)
+    steps = [(-2, 0), (2, 0), (0, -2), (0, 2)]
+
+    # Recursive backtracker (iterative) from the start corner
+    grid[1][1] = 0
+    stack = [(1, 1)]
+    while stack:
+        r, c = stack[-1]
+        options = [(r + dr, c + dc, dr, dc) for dr, dc in steps
+                   if 0 < r + dr < size - 1 and 0 < c + dc < size - 1 and grid[r + dr][c + dc] == 1]
+        if not options:
+            stack.pop()
+            continue
+        nr, nc, dr, dc = rng.choice(options)
+        grid[r + dr // 2][c + dc // 2] = 0
+        grid[nr][nc] = 0
+        stack.append((nr, nc))
+
+    # Braid: open some dead ends into neighbouring corridors to create loops
+    for r in cells:
+        for c in cells:
+            open_dirs = [(dr, dc) for dr, dc in steps if grid[r + dr // 2][c + dc // 2] == 0]
+            if len(open_dirs) == 1 and rng.random() < BRAID_CHANCE:
+                walls = [(dr, dc) for dr, dc in steps
+                         if (dr, dc) not in open_dirs and 0 < r + dr < size - 1 and 0 < c + dc < size - 1]
+                if walls:
+                    dr, dc = rng.choice(walls)
+                    grid[r + dr // 2][c + dc // 2] = 0
+
+    # Open 3x3 launch room and finish room
+    for r0, c0 in [(1, 1), (size - 4, size - 4)]:
+        for r in range(r0, r0 + 3):
+            for c in range(c0, c0 + 3):
+                grid[r][c] = 0
+    return grid
+
+
+MAZE_LAYOUT = generate_maze(MAZE_SIZE, MAZE_SEED)
 
 GRID_H = len(MAZE_LAYOUT)
 GRID_W = len(MAZE_LAYOUT[0])
@@ -178,18 +214,6 @@ GRID_W = len(MAZE_LAYOUT[0])
 # Start zone center and Goal zone center
 START_POS = (2.5, 2.5)
 GOAL_POS = (24.5, 24.5)
-
-# 8 Red Holes (Wormhole Teleporters)
-RED_HOLES = [
-    {"id": 0, "x": 3.5,  "y": 12.5, "name": "Vortex Alpha"},
-    {"id": 1, "y": 7.5,  "x": 8.5,  "name": "Vortex Beta"},
-    {"id": 2, "x": 13.5, "y": 7.5,  "name": "Vortex Gamma"},
-    {"id": 3, "x": 13.5, "y": 14.5, "name": "Nexus Core"},
-    {"id": 4, "x": 8.5,  "y": 18.5, "name": "Vortex Delta"},
-    {"id": 5, "x": 17.5, "y": 12.5, "name": "Vortex Epsilon"},
-    {"id": 6, "x": 18.5, "y": 23.5, "name": "Vortex Zeta"},
-    {"id": 7, "x": 23.5, "y": 18.5, "name": "Peril Vortex"},  # Right before goal!
-]
 
 # Read active Cloudflare Tunnel URL if available
 def get_tunnel_url() -> Optional[str]:
@@ -226,6 +250,113 @@ BFS_DISTANCES, MAX_DISTANCE = build_bfs_distance_field(MAZE_LAYOUT, int(GOAL_POS
 
 
 # -----------------------------------------------------------------------------
+# Red Holes (Pulsing Gravity Wormholes)
+# -----------------------------------------------------------------------------
+# Holes pulse open and closed: while open they pull nearby balls in and warp
+# anything that touches them; while closed they are safe to roll across.
+HOLE_COUNT = 12
+HOLES_ON_ROUTE = 5          # how many sit directly on the shortest route
+HOLE_MIN_SPACING = 4.0      # min distance between holes (tiles)
+HOLE_PULL_RADIUS = 2.2      # gravity reach (tiles)
+HOLE_PULL_STRENGTH = 9.0    # peak pull accel (tilt accel is 14.0)
+HOLE_OPEN_THRESHOLD = 0.08  # holes smaller than this can't swallow balls
+WARP_IMMUNITY = 0.9         # seconds of immunity after a warp
+
+HOLE_NAMES = [
+    "Customs Hold", "Lost & Found", "Return Centre", "Sorting Depot", "Overseas Hub",
+    "Address Unknown", "Damaged Goods", "Restock Bay", "Back-Order Pit", "Missed Delivery",
+    "Clearance Bin", "Final Mile Trap",
+]
+
+
+def place_red_holes() -> List[dict]:
+    rng = random.Random(MAZE_SEED + 1)
+
+    # Shortest route from launch to finish, following the BFS gradient
+    route = []
+    r, c = int(START_POS[1]), int(START_POS[0])
+    while BFS_DISTANCES[r][c] > 0:
+        route.append((r, c))
+        r, c = min(
+            ((r + dr, c + dc) for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]
+             if MAZE_LAYOUT[r + dr][c + dc] == 0),
+            key=lambda rc: BFS_DISTANCES[rc[0]][rc[1]],
+        )
+
+    def far_from(cx, cy, picked):
+        if math.hypot(cx - START_POS[0], cy - START_POS[1]) < 4.5:
+            return False
+        if math.hypot(cx - GOAL_POS[0], cy - GOAL_POS[1]) < 3.5:
+            return False
+        return all(math.hypot(cx - h[0], cy - h[1]) >= HOLE_MIN_SPACING for h in picked)
+
+    picked: List[Tuple[float, float]] = []
+    # 1. Holes spread along the main route
+    for i in range(HOLES_ON_ROUTE):
+        frac = 0.15 + 0.75 * i / max(1, HOLES_ON_ROUTE - 1)
+        idx = int(frac * (len(route) - 1))
+        for off in [0, 1, -1, 2, -2, 3, -3, 4, -4]:
+            j = idx + off
+            if 0 <= j < len(route):
+                rr, cc = route[j]
+                if far_from(cc + 0.5, rr + 0.5, picked):
+                    picked.append((cc + 0.5, rr + 0.5))
+                    break
+
+    # 2. Remaining holes at junctions and corridors elsewhere
+    junctions, corridors = [], []
+    for rr in range(1, GRID_H - 1):
+        for cc in range(1, GRID_W - 1):
+            if MAZE_LAYOUT[rr][cc] != 0:
+                continue
+            n_open = sum(MAZE_LAYOUT[rr + dr][cc + dc] == 0 for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)])
+            (junctions if n_open >= 3 else corridors).append((cc + 0.5, rr + 0.5))
+    rng.shuffle(junctions)
+    rng.shuffle(corridors)
+    for cx, cy in junctions + corridors:
+        if len(picked) >= HOLE_COUNT:
+            break
+        if far_from(cx, cy, picked):
+            picked.append((cx, cy))
+
+    return [
+        {
+            "id": i,
+            "x": x,
+            "y": y,
+            "name": HOLE_NAMES[i % len(HOLE_NAMES)],
+            "period": round(rng.uniform(2.4, 3.8), 2),  # seconds per open/close cycle
+            "phase": round(rng.uniform(0, math.pi * 2), 2),
+        }
+        for i, (x, y) in enumerate(picked)
+    ]
+
+
+RED_HOLES = place_red_holes()
+HOLE_CLOCK_START = time.monotonic()
+
+
+def hole_goal_dist(hole: dict) -> int:
+    return BFS_DISTANCES[int(hole["y"])][int(hole["x"])]
+
+
+COUPON_CELLS = [
+    (c + 0.5, r + 0.5)
+    for r in range(GRID_H) for c in range(GRID_W)
+    if MAZE_LAYOUT[r][c] == 0
+    and math.hypot(c + 0.5 - START_POS[0], r + 0.5 - START_POS[1]) > 3.0
+    and math.hypot(c + 0.5 - GOAL_POS[0], r + 0.5 - GOAL_POS[1]) > 2.5
+    and all(math.hypot(c + 0.5 - h["x"], r + 0.5 - h["y"]) > 1.5 for h in RED_HOLES)
+]
+
+
+def hole_radius(hole: dict, now: float) -> float:
+    """Current swallow radius: open ~60% of each cycle, fully closed the rest."""
+    s = math.sin(2 * math.pi * (now - HOLE_CLOCK_START) / hole["period"] + hole["phase"])
+    return HOLE_RADIUS * max(0.0, min(1.0, (s + 0.3) / 0.5))
+
+
+# -----------------------------------------------------------------------------
 # Physics Engine & Game Manager
 # -----------------------------------------------------------------------------
 class GyroMazeEngine:
@@ -245,6 +376,23 @@ class GyroMazeEngine:
 
         self.events: List[dict] = []
         self.pending_events: List[dict] = []
+        self.hole_radii: List[float] = [0.0] * len(RED_HOLES)
+        self.coupons: List[dict] = []
+        self.coupon_pickups: List[list] = []   # [x, y, value] since last host tick
+        self.coupon_seq = 0
+        self.respawn_coupons()
+
+    def make_coupon(self) -> dict:
+        taken = {(c["x"], c["y"]) for c in self.coupons}
+        free = [cell for cell in COUPON_CELLS if cell not in taken]
+        x, y = random.choice(free)
+        self.coupon_seq += 1
+        return {"id": self.coupon_seq, "x": x, "y": y, "value": random.choice(COUPON_VALUES)}
+
+    def respawn_coupons(self):
+        self.coupons = []
+        for _ in range(COUPON_COUNT):
+            self.coupons.append(self.make_coupon())
 
     def reset_game(self):
         self.phase = "LOBBY"
@@ -253,6 +401,8 @@ class GyroMazeEngine:
         self.podium.clear()
         self.events.clear()
         self.pending_events.clear()
+        self.coupon_pickups.clear()
+        self.respawn_coupons()
 
         # Reset all balls to Start zone with slight random jitter
         all_participants = list(self.players.values()) + self.bots
@@ -272,6 +422,9 @@ class GyroMazeEngine:
         player["warps"] = 0
         player["cooldown"] = 0.0
         player["progress"] = 0
+        player["savings"] = 0
+        player["coupons"] = 0
+        player["shield"] = 1 if player.get("perk") == "insured" else 0
 
     def register_player(self, ws: Optional[WSConnection], name: str, color_idx: int = 0, is_bot=False) -> dict:
         player_id = f"p_{random.randint(100000, 999999)}"
@@ -298,6 +451,7 @@ class GyroMazeEngine:
             "progress": 0,
             "is_bot": is_bot,
             "ws": ws,
+            "perk": random.choice(PERK_KEYS),
         }
         self.spawn_ball_at_start(player)
 
@@ -308,7 +462,7 @@ class GyroMazeEngine:
             if ws:
                 self.ws_to_player[ws] = player_id
 
-        self.add_event(f"🏎️ {clean_name} joined the starting grid!", "join")
+        self.add_event(f"🛒 {clean_name} joined the warehouse!", "join")
         return player
 
     def unregister_player(self, ws: WSConnection):
@@ -323,6 +477,21 @@ class GyroMazeEngine:
             # Clamp tilt inputs between -1.0 and 1.0
             p["tilt_x"] = max(-1.0, min(1.0, float(tx)))
             p["tilt_y"] = max(-1.0, min(1.0, float(ty)))
+
+    def locate_player(self, player_id: str):
+        p = self.players.get(player_id)
+        if not p:
+            return
+        now = time.time()
+        if now - p.get("last_locate", 0) < 2.0:
+            return
+        p["last_locate"] = now
+        self.pending_events.append({
+            "id": f"loc_{int(now*1000)}_{random.randint(100, 999)}",
+            "type": "locate",
+            "player_id": p["id"],
+            "player_name": p["name"],
+        })
 
     def add_event(self, text: str, event_type: str = "info", coords: Optional[Tuple[float, float]] = None, **kwargs):
         evt_id = f"e_{int(time.time()*1000)}_{random.randint(100, 999)}"
@@ -343,20 +512,20 @@ class GyroMazeEngine:
         self.reset_game()
         self.phase = "PLAYING"
         self.timer = MATCH_DURATION
-        self.add_event("🚨 RACE COMMENCED! 120 SECONDS ON THE CLOCK!", "announcement")
+        self.add_event("🔥 THE SALE IS LIVE! 120 SECONDS TO GET DELIVERED!", "announcement")
 
     def toggle_bots(self, count: int):
         cur = len(self.bots)
         if count > cur:
             names = [
-                "Vortex", "Apex", "Nova", "Cyber", "Glitch", "Echo", "Titan", "Phantom",
-                "Matrix", "Volt", "Pulse", "Quantum", "Shadow", "Rogue", "Blaze", "Frost",
-                "Specter", "Zero", "Aura", "Zenith", "Turbo", "Krypton", "Raptor", "Onyx"
+                "Bargain", "Deal", "Promo", "Coupon", "Cart", "Parcel", "Flash", "Discount",
+                "Saver", "Haul", "Unbox", "Checkout", "Freebie", "Markdown", "Clearance", "Bundle",
+                "Voucher", "Steal", "Restock", "Wishlist", "Basket", "Doorbuster", "Rebate", "Haggle"
             ]
             for i in range(count - cur):
                 b_name = f"Bot-{random.choice(names)}{random.randint(10, 99)}"
                 self.register_player(None, b_name, color_idx=random.randint(0, len(BALL_COLORS)-1), is_bot=True)
-            self.add_event(f"🤖 Added {count - cur} simulated racers (Total bots: {len(self.bots)}).")
+            self.add_event(f"🤖 Added {count - cur} simulated shoppers (Total bots: {len(self.bots)}).")
         elif count < cur:
             self.bots = self.bots[:count]
             self.add_event(f"🤖 Bots adjusted to {len(self.bots)}.")
@@ -375,6 +544,10 @@ class GyroMazeEngine:
         self.timer = max(0.0, self.timer - dt)
 
         all_balls = list(self.players.values()) + self.bots
+
+        # Red Hole pulse state for this tick
+        now = time.monotonic()
+        self.hole_radii = [hole_radius(h, now) for h in RED_HOLES]
 
         # Bot AI: Navigate towards Goal using BFS distance field gradient
         for b in self.bots:
@@ -398,6 +571,29 @@ class GyroMazeEngine:
                         best_d = d
                         best_dir = (float(dc), float(dr))
 
+            # Coupon hunting: detour for a coupon in this tile or an open neighbouring tile
+            for cp in self.coupons:
+                cr, cc = int(cp["y"]), int(cp["x"])
+                if abs(cr - r) + abs(cc - c) <= 1 and MAZE_LAYOUT[cr][cc] == 0:
+                    dx, dy = cp["x"] - b["x"], cp["y"] - b["y"]
+                    d = math.hypot(dx, dy) or 1.0
+                    best_dir = (dx / d, dy / d)
+                    break
+
+            # Hole timing: back away from an open hole nearby and wait for it to close
+            # (each bot has its own nerve, so some get greedy and get swallowed)
+            nerve = b.setdefault("nerve", random.uniform(1.0, 2.0))
+            if b["cooldown"] <= 0:
+                for hole, rad in zip(RED_HOLES, self.hole_radii):
+                    if rad <= 0.0:
+                        continue
+                    dx = b["x"] - hole["x"]
+                    dy = b["y"] - hole["y"]
+                    d = math.hypot(dx, dy)
+                    if 0.001 < d < nerve:
+                        best_dir = (dx / d * 1.2, dy / d * 1.2)
+                        break
+
             # Add human-like steering noise
             noise_x = random.uniform(-0.35, 0.35)
             noise_y = random.uniform(-0.35, 0.35)
@@ -413,8 +609,22 @@ class GyroMazeEngine:
                 p["cooldown"] = max(0.0, p["cooldown"] - dt)
 
             # Acceleration from tilt: max ~14.0 units/sec^2
-            ax = p["tilt_x"] * 14.0
-            ay = p["tilt_y"] * 14.0
+            speed_mult = EXPRESS_SPEED_MULT if p.get("perk") == "express" else 1.0
+            ax = p["tilt_x"] * 14.0 * speed_mult
+            ay = p["tilt_y"] * 14.0 * speed_mult
+
+            # Red Hole gravity: open holes drag nearby balls toward their core
+            if p["cooldown"] <= 0:
+                for hole, rad in zip(RED_HOLES, self.hole_radii):
+                    if rad <= 0.0:
+                        continue
+                    dx = hole["x"] - p["x"]
+                    dy = hole["y"] - p["y"]
+                    d = math.hypot(dx, dy)
+                    if 0.001 < d < HOLE_PULL_RADIUS:
+                        pull = HOLE_PULL_STRENGTH * (1.0 - d / HOLE_PULL_RADIUS) * (rad / HOLE_RADIUS)
+                        ax += dx / d * pull
+                        ay += dy / d * pull
 
             # Velocity integration with friction
             p["vx"] = (p["vx"] + ax * dt) * 0.94
@@ -422,8 +632,9 @@ class GyroMazeEngine:
 
             # Terminal velocity clamp (prevents tunnel glitches through walls)
             speed_sq = p["vx"] * p["vx"] + p["vy"] * p["vy"]
-            if speed_sq > 49.0:  # 7.0 units/sec max
-                scale = 7.0 / math.sqrt(speed_sq)
+            max_speed = 7.0 * speed_mult
+            if speed_sq > max_speed * max_speed:  # 7.0 units/sec max (8.4 with Express)
+                scale = max_speed / math.sqrt(speed_sq)
                 p["vx"] *= scale
                 p["vy"] *= scale
 
@@ -436,6 +647,9 @@ class GyroMazeEngine:
 
             # Check Red Hole Teleportation
             self.check_red_hole_collision(p)
+
+            # Coupon pickups
+            self.check_coupon_pickup(p)
 
             # Check Goal Portal Collision
             self.check_goal_collision(p)
@@ -450,7 +664,7 @@ class GyroMazeEngine:
         if self.timer <= 0:
             self.phase = "OVER"
             self.timer = 0.0
-            self.add_event("🏁 TIME'S UP! THE CHECKERED FLAG HAS DROPPED!", "announcement")
+            self.add_event("⏰ SALE OVER! THE DELIVERY WINDOW HAS CLOSED!", "announcement")
 
     def resolve_wall_collisions(self, p: dict):
         x, y = p["x"], p["y"]
@@ -500,14 +714,28 @@ class GyroMazeEngine:
         if p["cooldown"] > 0:
             return
 
-        for hole in RED_HOLES:
+        for hole, rad in zip(RED_HOLES, self.hole_radii):
+            if rad < HOLE_OPEN_THRESHOLD:
+                continue  # closed: safe to roll across
             dx = p["x"] - hole["x"]
             dy = p["y"] - hole["y"]
             dist = math.sqrt(dx * dx + dy * dy)
-            if dist < (BALL_RADIUS + HOLE_RADIUS):
-                # Pick a random DIFFERENT hole to teleport to
+            if dist < (BALL_RADIUS + rad):
+                if p.get("shield", 0) > 0:
+                    # Insured Parcel: bounce out once instead of being rerouted
+                    p["shield"] -= 1
+                    p["cooldown"] = WARP_IMMUNITY * 1.5
+                    if dist > 0.001:
+                        p["vx"] = dx / dist * 4.0
+                        p["vy"] = dy / dist * 4.0
+                    self.add_event(f"🛡️ {p['name']} claimed insurance and dodged {hole['name']}!", "insured")
+                    self.notify(p, {"type": "you_insured", "hole": hole["name"]})
+                    break
+                # Warp to a random different hole that is NO closer to the finish,
+                # so falling in is always a setback, never a shortcut.
                 other_holes = [h for h in RED_HOLES if h["id"] != hole["id"]]
-                target = random.choice(other_holes)
+                worse = [h for h in other_holes if hole_goal_dist(h) >= hole_goal_dist(hole)]
+                target = random.choice(worse) if worse else max(other_holes, key=hole_goal_dist)
 
                 p["x"] = target["x"]
                 p["y"] = target["y"]
@@ -515,28 +743,51 @@ class GyroMazeEngine:
                 angle = random.uniform(0, math.pi * 2)
                 p["vx"] = math.cos(angle) * 3.8
                 p["vy"] = math.sin(angle) * 3.8
-                p["cooldown"] = 1.8  # 1.8s warp immunity
+                p["cooldown"] = WARP_IMMUNITY
                 p["warps"] += 1
 
                 self.add_event(
-                    f"🌀 {p['name']} fell into {hole['name']} ➔ warped to {target['name']}!",
+                    f"📦 {p['name']} got stuck at {hole['name']} ➔ rerouted to {target['name']}!",
                     "warp",
                     coords=(target["x"], target["y"]),
                     player_name=p["name"],
                     hole_name=hole["name"],
                     target_name=target["name"],
                     player_id=p["id"],
+                    from_coords=(hole["x"], hole["y"]),
+                    human=not p["is_bot"],
                 )
 
-                # Notify player over WS
-                if p.get("ws") and not p["ws"].closed:
-                    asyncio.create_task(p["ws"].send_json({
-                        "type": "you_warped",
-                        "from": hole["name"],
-                        "to": target["name"],
-                        "warps": p["warps"]
-                    }))
+                self.notify(p, {
+                    "type": "you_warped",
+                    "from": hole["name"],
+                    "to": target["name"],
+                    "from_xy": [hole["x"], hole["y"]],
+                    "to_xy": [target["x"], target["y"]],
+                    "warps": p["warps"]
+                })
                 break
+
+    def notify(self, p: dict, msg: dict):
+        ws = p.get("ws")
+        if ws and not ws.closed:
+            asyncio.create_task(ws.send_json(msg))
+
+    def check_coupon_pickup(self, p: dict):
+        reach = BALL_RADIUS + COUPON_RADIUS
+        if p.get("perk") == "magnet":
+            reach = MAGNET_REACH
+        for i, cp in enumerate(self.coupons):
+            dx = p["x"] - cp["x"]
+            dy = p["y"] - cp["y"]
+            if dx * dx + dy * dy < reach * reach:
+                p["savings"] += cp["value"]
+                p["coupons"] += 1
+                self.coupon_pickups.append([cp["x"], cp["y"], cp["value"]])
+                self.coupons[i] = self.make_coupon()   # restock elsewhere
+                if cp["value"] >= 10:
+                    self.add_event(f"💸 {p['name']} grabbed a $10 MEGA COUPON!", "coupon")
+                self.notify(p, {"type": "you_coupon", "value": cp["value"], "savings": p["savings"]})
 
     def check_goal_collision(self, p: dict):
         if p["finished"]:
@@ -559,10 +810,11 @@ class GyroMazeEngine:
                 "time": p["finish_time"],
                 "color": p["color"],
                 "warps": p["warps"],
+                "savings": p["savings"],
             })
 
             self.add_event(
-                f"🏆 {p['name']} CROSSED THE GOAL LINE! (Rank #{p['finish_rank']} in {p['finish_time']}s)",
+                f"🏠 {p['name']} GOT DELIVERED! (#{p['finish_rank']} in {p['finish_time']}s)",
                 "goal",
                 coords=GOAL_POS,
                 player_name=p["name"],
@@ -571,12 +823,11 @@ class GyroMazeEngine:
                 player_id=p["id"],
             )
 
-            if p.get("ws") and not p["ws"].closed:
-                asyncio.create_task(p["ws"].send_json({
-                    "type": "you_finished",
-                    "rank": p["finish_rank"],
-                    "time": p["finish_time"],
-                }))
+            self.notify(p, {
+                "type": "you_finished",
+                "rank": p["finish_rank"],
+                "time": p["finish_time"],
+            })
 
     # -------------------------------------------------------------------------
     # State Serialization & Leaderboard
@@ -600,6 +851,8 @@ class GyroMazeEngine:
                 "finished": p["finished"],
                 "rank": p["finish_rank"] if p["finished"] else (i + 1),
                 "warps": p["warps"],
+                "savings": p["savings"],
+                "perk": p.get("perk", "none"),
             }
             for i, p in enumerate(combined[:10])
         ]
@@ -653,6 +906,7 @@ async def handle_ws_client(ws: WSConnection):
                     "red_holes": RED_HOLES,
                     "start_pos": START_POS,
                     "goal_pos": GOAL_POS,
+                    "perks": PERKS,
                     "events": engine.events[-10:],
                 })
 
@@ -670,12 +924,24 @@ async def handle_ws_client(ws: WSConnection):
                         "name": player["name"],
                         "color": player["color"],
                         "color_idx": player["color_idx"],
+                        "perk": player["perk"],
+                    },
+                    "perk_info": PERKS[player["perk"]],
+                    "map": {
+                        "maze": MAZE_LAYOUT,
+                        "holes": [[h["x"], h["y"]] for h in RED_HOLES],
+                        "start": START_POS,
+                        "goal": GOAL_POS,
                     },
                     "phase": engine.phase,
                     "timer": round(engine.timer, 1),
                 })
 
             # Gyro / Tilt Input
+            elif mtype == "locate_me":
+                if registered_player_id:
+                    engine.locate_player(registered_player_id)
+
             elif mtype == "tilt":
                 if registered_player_id:
                     tx = msg.get("x", 0.0)
@@ -721,9 +987,9 @@ async def game_loop():
         # 1. Broadcast to Host Screen (all balls, positions, events)
         if engine.hosts:
             all_b = list(engine.players.values()) + engine.bots
-            # Compact ball representation: [id, round(x,2), round(y,2), color_idx, finished, warps, name]
+            # Compact ball representation: [id, x, y, color_idx, finished, warps, name, savings, is_human]
             balls_data = [
-                [p["id"], round(p["x"], 2), round(p["y"], 2), p["color_idx"], 1 if p["finished"] else 0, p["warps"], p["name"]]
+                [p["id"], round(p["x"], 2), round(p["y"], 2), p["color_idx"], 1 if p["finished"] else 0, p["warps"], p["name"], p["savings"], 0 if p["is_bot"] else 1]
                 for p in all_b
             ]
             latest_ticker = engine.events[-1]["text"] if engine.events else ""
@@ -741,7 +1007,11 @@ async def game_loop():
                 "podium": engine.podium[:5],
                 "events": events_to_send,
                 "ticker": latest_ticker,
+                "hole_radii": [round(hole_radius(h, time.monotonic()), 2) for h in RED_HOLES],
+                "coupons": [[c["x"], c["y"], c["value"]] for c in engine.coupons],
+                "coupon_pickups": engine.coupon_pickups,
             }
+            engine.coupon_pickups = []
             payload = json.dumps(host_update, separators=(",", ":"))
             dead_hosts = []
             for h in engine.hosts:
@@ -752,9 +1022,13 @@ async def game_loop():
             for dh in dead_hosts:
                 engine.hosts.discard(dh)
 
+        engine.coupon_pickups = []  # don't accumulate when no host screen is open
+
         # 2. Broadcast to Mobile Players every 3 ticks (~10 Hz)
         if tick_counter % 3 == 0 and engine.players:
             leaderboard = engine.get_leaderboard()
+            now_mono = time.monotonic()
+            hole_state = [round(hole_radius(h, now_mono), 2) for h in RED_HOLES]
             dead_players = []
             for pid, player in engine.players.items():
                 ws = player.get("ws")
@@ -778,6 +1052,12 @@ async def game_loop():
                     "warps": player["warps"],
                     "finished": player["finished"],
                     "finish_rank": player["finish_rank"],
+                    "savings": player["savings"],
+                    "coupons": player["coupons"],
+                    "shield": player["shield"],
+                    "x": round(player["x"], 2),
+                    "y": round(player["y"], 2),
+                    "holes": hole_state,
                 }
                 try:
                     await ws.send_json(player_msg)
@@ -892,7 +1172,7 @@ async def handle_http_client(reader: asyncio.StreamReader, writer: asyncio.Strea
 async def main():
     server = await asyncio.start_server(handle_http_client, "0.0.0.0", PORT)
     print("=" * 65)
-    print("🌀 GYRO MAZE 300 - 300-Player Marble Race Running!")
+    print("📦 TEAMU: THE GREAT PARCEL RACE - Server Running!")
     print(f"🖥️  Host Screen (Big Display): http://{LAN_IP}:{PORT}/")
     print(f"📱 Phone Controller (Wi-Fi):  http://{LAN_IP}:{PORT}/play")
     print(f"🌐 Local Machine:             http://localhost:{PORT}/")

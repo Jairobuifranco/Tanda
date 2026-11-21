@@ -1,5 +1,5 @@
 /**
- * Procedural Web Audio API Synthesizer for Gyro Maze
+ * Procedural Web Audio API Synthesizer for Teamu: The Great Parcel Race
  * 100% offline, zero audio asset downloads, ultra-low latency.
  */
 class SoundEngine {
@@ -66,6 +66,28 @@ class SoundEngine {
     gain.connect(this.ctx.destination);
     osc.start(now);
     osc.stop(now + 0.06);
+  }
+
+  // Cash-register "cha-ching" for coupon pickups
+  playChaChing() {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+
+    const now = this.ctx.currentTime;
+    [[1318.5, 0], [1760, 0.07]].forEach(([freq, delay]) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(freq, now + delay);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.setValueAtTime(0.09, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.18);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.2);
+    });
   }
 
   playWarp() {

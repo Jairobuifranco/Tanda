@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>GYRO MAZE 300 - Phone Controller</title>
+  <meta name="theme-color" content="#FB7701">
+  <title>TEAMU - Parcel Controller</title>
   <link rel="stylesheet" href="/play.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,83 +12,121 @@
 </head>
 <body class="player-body">
 
-  <!-- 1. JOIN & CALIBRATE VIEW -->
+  <!-- 1. JOIN VIEW -->
   <div id="join-screen" class="view-panel active-panel">
+    <div class="app-bar">
+      <span class="app-logo">🛍️ TEAMU</span>
+      <span class="app-bar-tag">THE GREAT PARCEL RACE</span>
+    </div>
     <div class="join-card">
-      <div class="brand-badge">🌀 300-PLAYER RACE</div>
-      <h1 class="game-headline">GYRO MAZE 300</h1>
-      <p class="game-tagline">Tilt your phone to steer through the maze</p>
+      <div class="deal-sticker">🔥 2-MINUTE FLASH SALE</div>
+      <h1 class="game-headline">Get your parcel delivered first!</h1>
+      <p class="game-tagline">Tilt your phone to roll your parcel through the warehouse.</p>
 
       <form id="join-form" onsubmit="event.preventDefault(); joinGame();">
         <div class="input-group">
-          <label for="player-name-input">RACER CALLSIGN</label>
+          <label for="player-name-input">SHOPPER NAME</label>
           <input type="text" id="player-name-input" maxlength="14" placeholder="Enter nickname..." autofocus required autocomplete="off">
         </div>
 
         <!-- Color Selector -->
         <div class="color-picker-box">
-          <label>CHOOSE YOUR BALL COLOR</label>
+          <label>PARCEL COLOUR</label>
           <div class="color-swatches" id="color-swatches">
-            <button type="button" class="swatch selected" data-idx="0" style="background: #00e5ff;"></button>
-            <button type="button" class="swatch" data-idx="1" style="background: #ff2a5f;"></button>
-            <button type="button" class="swatch" data-idx="2" style="background: #00ff88;"></button>
-            <button type="button" class="swatch" data-idx="3" style="background: #ffbe0b;"></button>
-            <button type="button" class="swatch" data-idx="4" style="background: #b026ff;"></button>
-            <button type="button" class="swatch" data-idx="5" style="background: #ff6600;"></button>
-            <button type="button" class="swatch" data-idx="6" style="background: #ffffff;"></button>
-            <button type="button" class="swatch" data-idx="7" style="background: #ff0077;"></button>
+            <button type="button" class="swatch selected" data-idx="0" style="background: #1E88E5;"></button>
+            <button type="button" class="swatch" data-idx="1" style="background: #E91E63;"></button>
+            <button type="button" class="swatch" data-idx="2" style="background: #00A86B;"></button>
+            <button type="button" class="swatch" data-idx="3" style="background: #FFB300;"></button>
+            <button type="button" class="swatch" data-idx="4" style="background: #8E24AA;"></button>
+            <button type="button" class="swatch" data-idx="5" style="background: #8D6E63;"></button>
+            <button type="button" class="swatch" data-idx="6" style="background: #263238;"></button>
+            <button type="button" class="swatch" data-idx="7" style="background: #00ACC1;"></button>
           </div>
         </div>
 
-        <button type="submit" id="btn-enter" class="btn-join pulse-btn">ENABLE GYRO & JOIN</button>
-        <button type="button" class="btn-quick" onclick="quickRandomName()">🎲 Random Callsign</button>
+        <button type="submit" id="btn-enter" class="btn-join pulse-btn">ENABLE TILT & JOIN</button>
+        <button type="button" class="btn-quick" onclick="quickRandomName()">🎲 Random Name</button>
       </form>
 
       <div class="hazard-warning-pill">
-        ⚠️ Watch out for <strong>Red Holes</strong> on the big screen! They will teleport your ball to random parts of the maze.
+        ⚠️ Watch out for <strong>Customs Holds</strong> on the big screen! They pulse open and shut, pull you in while open, and reroute your parcel further from the door. Cross them while they're closed, and grab <strong>coupons</strong> along the way!
       </div>
     </div>
   </div>
 
-  <!-- 2. ACTIVE GYRO CONTROLLER HUD -->
+  <!-- 2. SPIN-THE-WHEEL VIEW -->
+  <div id="spin-screen" class="view-panel" style="display: none;">
+    <div class="app-bar">
+      <span class="app-logo">🛍️ TEAMU</span>
+      <span class="app-bar-tag">LUCKY WHEEL</span>
+    </div>
+    <div class="spin-card">
+      <h2 class="spin-title">🎁 Spin for a free perk!</h2>
+      <p class="spin-sub">Every shopper gets one spin.</p>
+      <div class="wheel-wrap">
+        <div class="wheel-pointer"></div>
+        <canvas id="wheel-canvas" width="560" height="560"></canvas>
+        <button id="btn-spin" class="wheel-hub" onclick="spinWheel()">SPIN</button>
+      </div>
+      <div id="perk-result" class="perk-result" style="display: none;">
+        <div class="perk-emoji" id="perk-emoji">🚚</div>
+        <div class="perk-name" id="perk-name">Express Shipping</div>
+        <div class="perk-desc" id="perk-desc">+20% speed all race</div>
+        <button class="btn-join" onclick="goToController()">START SHOPPING ➔</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. ACTIVE CONTROLLER HUD -->
   <div id="game-screen" class="view-panel" style="display: none;">
     <!-- Header -->
     <header class="controller-header" id="controller-header">
       <div class="player-info-badge">
         <span class="ball-preview-dot" id="ball-dot-preview"></span>
         <div class="player-details">
-          <span class="player-callsign" id="hud-player-name">Racer</span>
+          <span class="player-callsign" id="hud-player-name">Shopper</span>
           <span class="racer-status" id="hud-racer-status">HOLD PHONE LEVEL</span>
         </div>
       </div>
 
       <div class="timer-rank-pill">
+        <div class="timer-label">SALE ENDS IN</div>
         <div class="match-timer" id="ctrl-timer">02:00</div>
-        <div class="personal-rank">Rank: <span id="ctrl-rank">#1</span></div>
+        <div class="personal-rank">Rank <span id="ctrl-rank">#1</span></div>
       </div>
     </header>
 
-    <!-- Progress To Goal -->
+    <!-- Perk + Savings -->
+    <div class="wallet-row">
+      <div class="perk-chip" id="hud-perk">🎁 No perk</div>
+      <div class="savings-chip">💸 Saved <strong id="hud-savings">$0</strong></div>
+    </div>
+
+    <!-- Progress To Door -->
     <div class="progress-section">
       <div class="prog-header">
-        <span class="prog-label">🏁 DISTANCE TO FINISH</span>
+        <span class="prog-label">🚚 OUT FOR DELIVERY</span>
         <span class="prog-val" id="prog-pct-text">0%</span>
       </div>
       <div class="prog-track">
         <div class="prog-fill" id="prog-fill-bar" style="width: 0%;"></div>
       </div>
+      <div class="prog-ends"><span>📦 Warehouse</span><span>🏠 Your door</span></div>
     </div>
 
-    <!-- TILT COMPASS & BUBBLE LEVEL DISPLAY -->
+    <!-- MINI-MAP: where is my parcel? -->
+    <div class="map-card" id="map-card">
+      <canvas id="minimap"></canvas>
+      <div class="map-legend"><span class="you-key"></span> You <span class="hold-key"></span> Customs Hold 🏠 Door</div>
+    </div>
+
+    <!-- TILT DISC -->
     <div class="level-compass-wrapper" id="tilt-pad-area">
       <div class="level-disc" id="level-disc">
-        <!-- Center Target Rings -->
         <div class="crosshair-h"></div>
         <div class="crosshair-v"></div>
         <div class="ring ring-1"></div>
         <div class="ring ring-2"></div>
-        
-        <!-- Live Moving Marble Bubble -->
         <div class="level-marble" id="level-marble"></div>
       </div>
 
@@ -97,49 +136,57 @@
       </div>
     </div>
 
-    <!-- Controller Controls: Gyro vs Touch Pad & Re-Calibrate -->
+    <!-- Controller Controls -->
     <div class="controller-controls-bar">
-      <button class="btn-ctrl-mode" id="btn-recalibrate" onclick="recalibrateGyro()">📐 RE-CALIBRATE</button>
-      <button class="btn-ctrl-mode active" id="btn-mode-toggle" onclick="toggleControlMode()">📱 GYROSCOPE</button>
+      <button class="btn-ctrl-mode" id="btn-recalibrate" onclick="recalibrateGyro()">📐 CALIBRATE</button>
+      <button class="btn-ctrl-mode btn-find" id="btn-find-me" onclick="findMe()">📍 FIND ME</button>
+      <button class="btn-ctrl-mode active" id="btn-mode-toggle" onclick="toggleControlMode()">📱 GYRO</button>
     </div>
 
-    <!-- Red Hole Warp Alert Overlay -->
+    <!-- Rerouted / Insured Alert -->
     <div class="warp-flash-banner" id="warp-banner" style="display: none;">
-      <span class="warp-icon">🌀</span>
+      <span class="warp-icon" id="warp-icon">📦</span>
       <div class="warp-text">
-        <strong>SUCKED INTO RED HOLE!</strong>
-        <span id="warp-details">Teleporting to random vortex...</span>
+        <strong id="warp-title">PACKAGE REROUTED!</strong>
+        <span id="warp-details">Stuck at customs...</span>
       </div>
     </div>
 
-    <!-- Finished Banner (if player crosses goal) -->
+    <!-- Coupon toast -->
+    <div class="coupon-toast" id="coupon-toast" style="display: none;">+$5 COUPON! 💸</div>
+
+    <!-- Delivered Banner -->
     <div class="finished-banner" id="finished-banner" style="display: none;">
-      🏆 YOU CROSSED THE FINISH LINE!
+      🏠 DELIVERED!
       <span id="finish-rank-text">Rank #1 • 42.5s</span>
     </div>
   </div>
 
-  <!-- 3. MATCH OVER VIEW -->
+  <!-- 4. SALE OVER VIEW -->
   <div id="game-over-screen" class="view-panel" style="display: none;">
     <div class="over-card">
-      <div class="over-badge">RACE CONCLUDED</div>
-      <h2 class="over-title">CHECKERED FLAG!</h2>
-      <p class="over-sub">Watch the big screen for the final podium and awards ceremony!</p>
+      <div class="over-badge">SALE ENDED</div>
+      <h2 class="over-title">Order summary</h2>
+      <p class="over-sub">Watch the big screen for the podium and awards!</p>
 
       <div class="personal-summary">
         <div class="summary-stat">
           <span class="s-val" id="final-rank">#1</span>
-          <span class="s-lbl">Final Standing</span>
+          <span class="s-lbl">Final rank</span>
         </div>
         <div class="summary-stat">
-          <span class="s-val" id="final-warps">0</span>
-          <span class="s-lbl">Red Hole Warps</span>
+          <span class="s-val s-green" id="final-savings">$0</span>
+          <span class="s-lbl">Coupon savings</span>
+        </div>
+        <div class="summary-stat">
+          <span class="s-val s-red" id="final-warps">0</span>
+          <span class="s-lbl">Reroutes</span>
         </div>
       </div>
 
       <div class="awaiting-box">
         <div class="pulse-dot"></div>
-        <span>Awaiting Host to start rematch...</span>
+        <span>Waiting for the next sale...</span>
       </div>
     </div>
   </div>

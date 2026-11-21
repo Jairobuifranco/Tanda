@@ -1,7 +1,7 @@
 #!/bin/bash
-# GYRO MAZE 300 - Clean Shutdown Script
+# TEAMU Parcel Race - Clean Shutdown Script
 
-echo "🛑 Stopping GYRO MAZE 300 Server and Cloudflare Tunnel..."
+echo "🛑 Stopping TEAMU Parcel Race Server and Cloudflare Tunnel..."
 
 # Gracefully terminate python server and cloudflared processes
 pkill -f "python3 server.py" 2>/dev/null

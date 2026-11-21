@@ -1,5 +1,5 @@
 #!/bin/bash
-# GYRO MAZE 300 - Demo Quick Launcher
+# TEAMU Parcel Race - Demo Quick Launcher
 
 cd "$(dirname "$0")"
 
@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 ./stop.sh >/dev/null 2>&1
 
 echo "========================================================"
-echo "🌀 Starting GYRO MAZE 300 Game Server & Cloudflare Tunnel..."
+echo "📦 Starting TEAMU: The Great Parcel Race Game Server & Cloudflare Tunnel..."
 echo "========================================================"
 
 # 2. Launch server.py in background
